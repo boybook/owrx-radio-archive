@@ -51,6 +51,85 @@
     }
 
     // ==========================================
+    // i18n - Internationalization
+    // ==========================================
+    const i18n = {
+        messages: {
+            en: {
+                receivedFiles: 'Received Files',
+                radioArchive: 'Radio Archive',
+                frequency: 'Frequency',
+                date: 'Date',
+                timeline: 'Timeline',
+                recordings: 'Recordings',
+                noTrackSelected: 'No track selected',
+                auto: 'Auto',
+                zoomIn: 'Zoom In',
+                zoomOut: 'Zoom Out',
+                reset: 'Reset',
+                noRecordings: 'No audio recordings found.',
+                fileNamingHint: 'Audio files should be named: REC-YYMMDD-HHMMSS-FREQ.mp3',
+                loading: 'Loading...'
+            },
+            zh: {
+                receivedFiles: '已接收文件',
+                radioArchive: '录音存档',
+                frequency: '频率',
+                date: '日期',
+                timeline: '时间轴',
+                recordings: '录音',
+                noTrackSelected: '未选择音轨',
+                auto: '自动',
+                zoomIn: '放大',
+                zoomOut: '缩小',
+                reset: '重置',
+                noRecordings: '未找到录音文件',
+                fileNamingHint: '音频文件命名格式：REC-YYMMDD-HHMMSS-FREQ.mp3',
+                loading: '加载中...'
+            },
+            ja: {
+                receivedFiles: '受信ファイル',
+                radioArchive: '録音アーカイブ',
+                frequency: '周波数',
+                date: '日付',
+                timeline: 'タイムライン',
+                recordings: '録音',
+                noTrackSelected: 'トラック未選択',
+                auto: '自動',
+                zoomIn: 'ズームイン',
+                zoomOut: 'ズームアウト',
+                reset: 'リセット',
+                noRecordings: '録音ファイルが見つかりません',
+                fileNamingHint: 'ファイル名形式：REC-YYMMDD-HHMMSS-FREQ.mp3',
+                loading: '読み込み中...'
+            }
+        },
+
+        detectLanguage() {
+            const lang = navigator.language || navigator.userLanguage || 'en';
+            const shortLang = lang.split('-')[0].toLowerCase();
+            if (this.messages[shortLang]) {
+                return shortLang;
+            }
+            return 'en';
+        },
+
+        currentLang: null,
+
+        init() {
+            this.currentLang = this.detectLanguage();
+            console.log('[RadioArchive] Detected language:', this.currentLang);
+        },
+
+        t(key) {
+            const msgs = this.messages[this.currentLang] || this.messages.en;
+            return msgs[key] || this.messages.en[key] || key;
+        }
+    };
+
+    i18n.init();
+
+    // ==========================================
     // File Parser - Parse REC-YYMMDD-HHMMSS-FREQ.mp3
     // ==========================================
     const FileParser = {
@@ -685,16 +764,32 @@
                     viewStartTime.value = 0;
                 }
 
-                // 鼠标滚轮/触摸板缩放
+                // 鼠标滚轮/触摸板手势
                 function handleWheel(e) {
                     const rect = e.currentTarget.getBoundingClientRect();
-                    const positionRatio = (e.clientX - rect.left) / rect.width;
 
-                    // 触摸板双指捏合会触发 ctrlKey
-                    // 普通滚轮也支持缩放
-                    const delta = e.deltaY || e.deltaX;
-                    const zoomFactor = delta > 0 ? 0.9 : 1.1;
-                    zoomAtPosition(zoomLevel.value * zoomFactor, positionRatio);
+                    // Mac 触摸板捏合缩放：ctrlKey 为 true
+                    if (e.ctrlKey) {
+                        const positionRatio = (e.clientX - rect.left) / rect.width;
+                        // deltaY > 0 表示缩小，deltaY < 0 表示放大
+                        const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
+                        zoomAtPosition(zoomLevel.value * zoomFactor, positionRatio);
+                        return;
+                    }
+
+                    // Mac 触摸板双指滑动 或 鼠标滚轮
+                    // deltaX: 水平滑动（用于平移时间轴）
+                    // deltaY: 垂直滚动（也可用于缩放，可选）
+                    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                        // 水平滑动为主：平移时间轴
+                        const deltaTime = (e.deltaX / rect.width) * visibleDuration.value * 2;
+                        viewStartTime.value = clampViewStart(viewStartTime.value + deltaTime);
+                    } else {
+                        // 垂直滚动为主：缩放
+                        const positionRatio = (e.clientX - rect.left) / rect.width;
+                        const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
+                        zoomAtPosition(zoomLevel.value * zoomFactor, positionRatio);
+                    }
                 }
 
                 // 拖拽平移：开始
@@ -901,6 +996,11 @@
                     document.removeEventListener('keydown', handleKeydown);
                 });
 
+                // i18n helper
+                function t(key) {
+                    return i18n.t(key);
+                }
+
                 return {
                     // State
                     recordings,
@@ -960,7 +1060,9 @@
                     handlePointerUp,
                     handleTouchStart,
                     handleTouchMove,
-                    handleTouchEnd
+                    handleTouchEnd,
+                    // i18n
+                    t
                 };
             },
 
@@ -972,13 +1074,13 @@
                             class="tab-btn"
                             :class="{ active: activeView === 'original' }"
                             @click="switchView('original')">
-                            Received Files
+                            {{ t('receivedFiles') }}
                         </button>
                         <button
                             class="tab-btn"
                             :class="{ active: activeView === 'timeline' }"
                             @click="switchView('timeline')">
-                            Radio Archive
+                            {{ t('radioArchive') }}
                         </button>
                     </div>
 
@@ -988,7 +1090,7 @@
 
                             <!-- Frequency Selector -->
                             <div class="radio-archive-section">
-                                <div class="radio-archive-section-label">Frequency</div>
+                                <div class="radio-archive-section-label">{{ t('frequency') }}</div>
                                 <div class="frequency-list">
                                     <div
                                         v-for="freq in availableFreqs"
@@ -1004,7 +1106,7 @@
 
                             <!-- Date Selector -->
                             <div class="radio-archive-section">
-                                <div class="radio-archive-section-label">Date</div>
+                                <div class="radio-archive-section-label">{{ t('date') }}</div>
                                 <div class="date-selector">
                                     <button class="date-btn" @click="prevDate" :disabled="!canPrevDate()">&#8249;</button>
                                     <input
@@ -1019,7 +1121,7 @@
                             <!-- Timeline -->
                             <div class="radio-archive-section">
                                 <div class="radio-archive-section-label">
-                                    Timeline
+                                    {{ t('timeline') }}
                                     <span class="timeline-zoom-info">{{ visibleDurationLabel }}</span>
                                 </div>
                                 <div class="timeline-wrapper">
@@ -1060,9 +1162,9 @@
                                         </div>
                                     </div>
                                     <div class="timeline-controls">
-                                        <button class="timeline-ctrl-btn" @click="zoomIn" :disabled="zoomLevel >= 48" title="放大">+</button>
-                                        <button class="timeline-ctrl-btn" @click="zoomOut" :disabled="zoomLevel <= 1" title="缩小">−</button>
-                                        <button class="timeline-ctrl-btn" @click="resetZoom" :disabled="zoomLevel === 1" title="重置">↺</button>
+                                        <button class="timeline-ctrl-btn" @click="zoomIn" :disabled="zoomLevel >= 48" :title="t('zoomIn')">+</button>
+                                        <button class="timeline-ctrl-btn" @click="zoomOut" :disabled="zoomLevel <= 1" :title="t('zoomOut')">−</button>
+                                        <button class="timeline-ctrl-btn" @click="resetZoom" :disabled="zoomLevel === 1" :title="t('reset')">↺</button>
                                     </div>
                                 </div>
                             </div>
@@ -1072,7 +1174,7 @@
                                 <div class="player-container">
                                     <div class="player-now-playing">
                                         <span class="player-track-name">
-                                            {{ currentTrack ? formatDisplayTime(currentTrack) + ' - ' + formatFreq(currentTrack.frequency) : 'No track selected' }}
+                                            {{ currentTrack ? formatDisplayTime(currentTrack) + ' - ' + formatFreq(currentTrack.frequency) : t('noTrackSelected') }}
                                         </span>
                                         <span class="player-time">
                                             {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
@@ -1119,7 +1221,7 @@
 
                                         <label class="continuous-play">
                                             <input type="checkbox" v-model="continuousPlay">
-                                            <span>Auto</span>
+                                            <span>{{ t('auto') }}</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1128,9 +1230,9 @@
                             <!-- Recording List -->
                             <div class="radio-archive-section">
                                 <div class="radio-archive-section-label">
-                                    Recordings ({{ filteredRecordings.length }})
+                                    {{ t('recordings') }} ({{ filteredRecordings.length }})
                                     <span v-if="isPreloading" style="margin-left: 10px; color: #888;">
-                                        Loading... {{ preloadProgress }}%
+                                        {{ t('loading') }} {{ preloadProgress }}%
                                     </span>
                                 </div>
                                 <div class="recording-list-container">
@@ -1152,8 +1254,8 @@
 
                         <!-- Empty State -->
                         <div class="empty-state" v-else>
-                            <p>No audio recordings found.</p>
-                            <p>Audio files should be named: REC-YYMMDD-HHMMSS-FREQ.mp3</p>
+                            <p>{{ t('noRecordings') }}</p>
+                            <p>{{ t('fileNamingHint') }}</p>
                         </div>
                     </div>
                 </div>
