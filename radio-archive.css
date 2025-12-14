@@ -552,6 +552,21 @@
         font-size: 12px;
     }
 
+    .timeline-wrapper {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .timeline-controls {
+        flex-direction: row;
+        justify-content: center;
+    }
+
+    .timeline-ctrl-btn {
+        width: 40px;
+        height: 36px;
+    }
+
     .player-controls {
         flex-wrap: wrap;
         justify-content: center;
