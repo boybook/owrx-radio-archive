@@ -641,15 +641,55 @@
                     }
                 }
 
+                // 获取可跳转的时长估计值
+                function getSeekableDuration() {
+                    // 1. 优先使用已知的精确时长
+                    if (duration.value && isFinite(duration.value) && duration.value > 0) {
+                        return duration.value;
+                    }
+
+                    if (!audio.value) return 0;
+
+                    // 2. 尝试从 audio.seekable 获取可跳转范围
+                    try {
+                        if (audio.value.seekable && audio.value.seekable.length > 0) {
+                            const seekableEnd = audio.value.seekable.end(audio.value.seekable.length - 1);
+                            if (isFinite(seekableEnd) && seekableEnd > 0) {
+                                return seekableEnd;
+                            }
+                        }
+                    } catch (e) {
+                        // seekable 可能不可用
+                    }
+
+                    // 3. 尝试从 audio.buffered 获取已缓冲范围
+                    try {
+                        if (audio.value.buffered && audio.value.buffered.length > 0) {
+                            const bufferedEnd = audio.value.buffered.end(audio.value.buffered.length - 1);
+                            if (isFinite(bufferedEnd) && bufferedEnd > 0) {
+                                return bufferedEnd;
+                            }
+                        }
+                    } catch (e) {
+                        // buffered 可能不可用
+                    }
+
+                    // 4. 使用当前时间的 2 倍作为估计值，最少 60 秒
+                    return Math.max(currentTime.value * 2, 60);
+                }
+
                 function seek(e) {
-                    // Check if duration is valid
-                    if (!audio.value || !duration.value || !isFinite(duration.value)) {
-                        console.log('[RadioArchive] Cannot seek: duration not available');
+                    if (!audio.value) return;
+
+                    const seekableDuration = getSeekableDuration();
+                    if (seekableDuration <= 0) {
+                        console.log('[RadioArchive] Cannot seek: no seekable duration');
                         return;
                     }
+
                     const percent = e.target.value / 100;
-                    const newTime = percent * duration.value;
-                    if (isFinite(newTime)) {
+                    const newTime = percent * seekableDuration;
+                    if (isFinite(newTime) && newTime >= 0) {
                         audio.value.currentTime = newTime;
                     }
                 }
@@ -683,9 +723,21 @@
                 }
 
                 function onDurationChange() {
-                    if (isFinite(audio.value.duration)) {
+                    if (isFinite(audio.value.duration) && audio.value.duration > 0) {
                         duration.value = audio.value.duration;
                         console.log('[RadioArchive] Duration changed:', duration.value);
+
+                        // Update the recording object in the array for Vue reactivity
+                        if (currentTrack.value) {
+                            const index = recordings.value.findIndex(r => r.filename === currentTrack.value.filename);
+                            if (index !== -1 && !recordings.value[index].audioDuration) {
+                                recordings.value[index] = {
+                                    ...recordings.value[index],
+                                    audioDuration: audio.value.duration
+                                };
+                                console.log('[RadioArchive] Updated recording duration:', currentTrack.value.filename, audio.value.duration);
+                            }
+                        }
                     }
                 }
 
@@ -710,8 +762,9 @@
                 }
 
                 function getProgressPercent() {
-                    if (!duration.value) return 0;
-                    return (currentTime.value / duration.value) * 100;
+                    const seekableDuration = getSeekableDuration();
+                    if (seekableDuration <= 0) return 0;
+                    return Math.min(100, (currentTime.value / seekableDuration) * 100);
                 }
 
                 function isCurrentlyPlaying(rec) {
@@ -956,12 +1009,10 @@
                     }
                 });
 
-                // Watch for date/freq changes to trigger preload
+                // Watch for date/freq changes (preload disabled)
                 watch([selectedDate, selectedFreq], () => {
-                    console.log('[RadioArchive] Selection changed, triggering preload');
-                    nextTick(() => {
-                        preloadCurrentRecordings();
-                    });
+                    console.log('[RadioArchive] Selection changed');
+                    // Preload disabled - duration will be fetched on playback
                 });
 
                 // Keyboard shortcut handler
@@ -988,8 +1039,10 @@
                     // Right arrow: forward 5 seconds
                     if (e.code === 'ArrowRight') {
                         e.preventDefault();
-                        if (audio.value && duration.value) {
-                            audio.value.currentTime = Math.min(duration.value, audio.value.currentTime + 5);
+                        if (audio.value) {
+                            // 直接增加时间，浏览器会自动限制在有效范围内
+                            // 如果超出实际时长，会触发 ended 事件或限制在最大值
+                            audio.value.currentTime = audio.value.currentTime + 5;
                         }
                     }
                 }
@@ -997,10 +1050,7 @@
                 onMounted(() => {
                     nextTick(() => {
                         parseFilesFromDOM();
-                        // Initial preload after parsing
-                        nextTick(() => {
-                            preloadCurrentRecordings();
-                        });
+                        // Preload disabled - duration will be fetched on playback
                     });
 
                     // Add keyboard listener

@@ -297,11 +297,20 @@
     width: 100%;
     height: 4px;
     -webkit-appearance: none;
+    -moz-appearance: none;
     appearance: none;
-    background: #333;
+    background: transparent;
     border-radius: 2px;
     cursor: pointer;
     margin-bottom: 16px;
+}
+
+.player-progress-bar::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    border: none;
 }
 
 .player-progress-bar::-webkit-slider-thumb {
@@ -313,6 +322,15 @@
     border-radius: 50%;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    margin-top: -5px; /* (14 - 4) / 2 = 5, 垂直居中 */
+}
+
+.player-progress-bar::-moz-range-track {
+    width: 100%;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    border: none;
 }
 
 .player-progress-bar::-moz-range-thumb {
@@ -323,11 +341,7 @@
     border-radius: 50%;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.player-progress-bar::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 2px;
+    /* Firefox 不需要 margin-top，自动居中 */
 }
 
 .player-controls {
@@ -385,10 +399,19 @@
     width: 70px;
     height: 3px;
     -webkit-appearance: none;
+    -moz-appearance: none;
     appearance: none;
-    background: #333;
+    background: transparent;
     border-radius: 2px;
     cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 3px;
+    background: #333;
+    border-radius: 2px;
+    border: none;
 }
 
 .volume-slider::-webkit-slider-thumb {
@@ -400,6 +423,15 @@
     border-radius: 50%;
     cursor: pointer;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    margin-top: -4.5px; /* (12 - 3) / 2 = 4.5, 垂直居中 */
+}
+
+.volume-slider::-moz-range-track {
+    width: 100%;
+    height: 3px;
+    background: #333;
+    border-radius: 2px;
+    border: none;
 }
 
 .volume-slider::-moz-range-thumb {
