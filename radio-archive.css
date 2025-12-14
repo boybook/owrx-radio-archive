@@ -348,6 +348,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
+    row-gap: 10px;
 }
 
 .player-btn {
@@ -519,15 +521,22 @@
     min-width: 70px;
 }
 
+.recording-item .rec-filename-group {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    margin: 0 8px;
+}
+
 .recording-item .rec-filename {
     font-size: 11px;
     color: #666;
     font-family: monospace;
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin: 0 8px;
 }
 
 .recording-item .rec-duration {
@@ -535,6 +544,29 @@
     color: #555;
     min-width: 50px;
     text-align: right;
+}
+
+.rec-refresh-btn {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    font-size: 14px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+
+.recording-item:hover .rec-refresh-btn {
+    opacity: 1;
+}
+
+.rec-refresh-btn:hover {
+    color: #fff;
+    background: #333;
 }
 
 .recording-item .rec-bar {
@@ -705,8 +737,15 @@
 }
 
 /* ============================================
-   Skip Silence Checkbox
+   Player Options (checkboxes group)
    ============================================ */
+.player-options {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
 .skip-silence {
     display: flex;
     align-items: center;
@@ -714,6 +753,7 @@
     font-size: 12px;
     color: #666;
     cursor: pointer;
+    margin-bottom: 0;
 }
 
 .skip-silence input {

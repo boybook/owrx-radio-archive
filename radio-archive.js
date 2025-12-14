@@ -111,13 +111,33 @@
             }
         },
 
+        // Delete from cache (for force refresh)
+        async deleteFromCache(filename) {
+            try {
+                await this.initDB();
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction(this.storeName, 'readwrite');
+                    const store = tx.objectStore(this.storeName);
+                    store.delete(filename);
+                    tx.oncomplete = () => {
+                        console.log('[SilenceAnalyzer] Deleted from cache:', filename);
+                        resolve();
+                    };
+                    tx.onerror = () => resolve();
+                });
+            } catch (e) {
+                console.warn('[SilenceAnalyzer] Cache delete error:', e);
+            }
+        },
+
         // Check if recording is recent based on filename timestamp (UTC)
-        isRecordingRecent(filename, thresholdMs = 2 * 60 * 60 * 1000) {
+        // If allRecordings is provided, also check if there's a newer recording with same frequency
+        isRecordingRecent(filename, thresholdMs = 2 * 60 * 60 * 1000, allRecordings = null) {
             // Parse: REC-YYMMDD-HHMMSS-FREQ.mp3
-            const match = filename.match(/^REC-(\d{2})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-/i);
+            const match = filename.match(/^REC-(\d{2})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(\d+)/i);
             if (!match) return false;
 
-            const [, yy, mm, dd, hh, min, ss] = match;
+            const [, yy, mm, dd, hh, min, ss, freq] = match;
             const recordingTime = Date.UTC(
                 2000 + parseInt(yy, 10),
                 parseInt(mm, 10) - 1,
@@ -126,9 +146,27 @@
                 parseInt(min, 10),
                 parseInt(ss, 10)
             );
+            const frequency = parseInt(freq, 10);
 
             const now = Date.now();
-            return (now - recordingTime) < thresholdMs;
+            const isWithinThreshold = (now - recordingTime) < thresholdMs;
+
+            // If not within time threshold, definitely not recent
+            if (!isWithinThreshold) return false;
+
+            // If no recordings list provided, just use time-based check
+            if (!allRecordings || !Array.isArray(allRecordings)) return true;
+
+            // Check if there's a newer recording with the same frequency
+            const hasNewerSameFreq = allRecordings.some(r => {
+                if (r.filename === filename) return false;  // Skip self
+                if (r.frequency !== frequency) return false;  // Different frequency
+                // Compare timestamps: r.date is a Date object
+                return r.date.getTime() > recordingTime;
+            });
+
+            // If there's a newer recording with same frequency, this one is not "recent" (not actively recording)
+            return !hasNewerSameFreq;
         },
 
         // Main analyze function
@@ -137,11 +175,12 @@
                 silenceThreshold = 0.01,
                 minSilenceDuration = 2,
                 blockDuration = 0.1,
-                onProgress = null
+                onProgress = null,
+                allRecordings = null  // Pass recordings list to check for newer files
             } = options;
 
             // 1. Check if recording is recent (within 2 hours) - skip cache for recent recordings
-            const isRecent = this.isRecordingRecent(filename);
+            const isRecent = this.isRecordingRecent(filename, 2 * 60 * 60 * 1000, allRecordings);
 
             // 2. Check cache (skip for recent recordings that might still be recording)
             if (!isRecent) {
@@ -250,7 +289,7 @@
                     .reduce((sum, s) => sum + (s.end - s.start), 0)
             };
 
-            // 7. Save to cache
+            // 7. Save to cache (always save, including recent recordings for default display)
             await this.saveToCache(filename, result);
 
             if (onProgress) onProgress({ stage: 'ready', progress: 1 });
@@ -317,7 +356,8 @@
                 decodingAudio: 'Decoding...',
                 analyzingSilence: 'Analyzing...',
                 skipSilence: 'Skip silence',
-                activeSegments: 'segments'
+                activeSegments: 'segments',
+                refresh: 'Refresh'
             },
             zh: {
                 receivedFiles: '已接收文件',
@@ -338,7 +378,8 @@
                 decodingAudio: '解码中...',
                 analyzingSilence: '分析中...',
                 skipSilence: '跳过静噪',
-                activeSegments: '个片段'
+                activeSegments: '个片段',
+                refresh: '刷新'
             },
             ja: {
                 receivedFiles: '受信ファイル',
@@ -359,7 +400,8 @@
                 decodingAudio: 'デコード中...',
                 analyzingSilence: '分析中...',
                 skipSilence: '無音スキップ',
-                activeSegments: 'セグメント'
+                activeSegments: 'セグメント',
+                refresh: '更新'
             }
         },
 
@@ -550,6 +592,51 @@
 
                 // For timeline positioning
                 const SECONDS_PER_DAY = 86400;
+
+                // 获取前一天延续到当天的录音（跨日显示）
+                const crossDayRecordings = computed(() => {
+                    if (!selectedDate.value) return [];
+
+                    // 计算前一天的 dateKey
+                    const currentDate = new Date(selectedDate.value + 'T00:00:00');
+                    const prevDate = new Date(currentDate);
+                    prevDate.setDate(prevDate.getDate() - 1);
+                    const prevDateKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
+
+                    // 找出前一天的录音中，延续到当天的
+                    return recordings.value
+                        .filter(r => {
+                            // 必须是前一天的录音
+                            if (r.dateKey !== prevDateKey) return false;
+                            // 必须匹配当前频率筛选
+                            if (selectedFreq.value && r.frequency !== selectedFreq.value) return false;
+
+                            // 计算录音结束时间
+                            const analysis = analysisCache.get(r.filename);
+                            const duration = analysis?.duration
+                                || (r.audioDuration && isFinite(r.audioDuration) ? r.audioDuration : 0);
+
+                            // 如果没有时长信息，不显示跨日
+                            if (duration <= 0) return false;
+
+                            // 检查是否跨日：timeOfDay + duration > 86400
+                            return r.timeOfDay + duration > SECONDS_PER_DAY;
+                        })
+                        .map(r => {
+                            // 调整 timeOfDay 为负值，表示从当天 00:00 之前开始
+                            const offsetTime = r.timeOfDay - SECONDS_PER_DAY;
+                            return {
+                                ...r,
+                                timeOfDay: offsetTime,
+                                isCrossDay: true  // 标记为跨日录音
+                            };
+                        });
+                });
+
+                // 时间轴上显示的录音（包含跨日录音）
+                const timelineRecordings = computed(() => {
+                    return [...crossDayRecordings.value, ...filteredRecordings.value];
+                });
                 const MAX_ZOOM = 48;  // 最大缩放48倍（显示30分钟）
 
                 // ==========================================
@@ -706,24 +793,75 @@
                 }
 
                 function selectDate(dateKey) {
+                    const oldDate = selectedDate.value;
                     selectedDate.value = dateKey;
+
+                    // Stop playback if current track is not in new filter
+                    if (currentTrack.value && oldDate !== dateKey) {
+                        const trackDate = currentTrack.value.dateKey;
+                        const matchesCurrent = trackDate === dateKey;
+
+                        // Check if it's a cross-day recording (previous day extends into current day)
+                        let matchesCrossDay = false;
+                        if (trackDate !== dateKey) {
+                            const analysis = analysisCache.get(currentTrack.value.filename);
+                            const dur = analysis?.duration || currentTrack.value.audioDuration || 0;
+                            if (currentTrack.value.timeOfDay + dur > SECONDS_PER_DAY) {
+                                // Calculate next day's dateKey
+                                const nextDate = new Date(currentTrack.value.date);
+                                nextDate.setDate(nextDate.getDate() + 1);
+                                const nextDateKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+                                matchesCrossDay = nextDateKey === dateKey;
+                            }
+                        }
+
+                        if (!matchesCurrent && !matchesCrossDay) {
+                            // Stop playback
+                            if (audio.value) {
+                                audio.value.pause();
+                                audio.value.src = '';
+                            }
+                            currentTrack.value = null;
+                            currentIndex.value = -1;
+                            isPlaying.value = false;
+                            currentTime.value = 0;
+                            duration.value = 0;
+                        }
+                    }
                 }
 
                 function selectFreq(freq) {
+                    const oldFreq = selectedFreq.value;
                     selectedFreq.value = freq;
+
+                    // Stop playback if current track doesn't match new frequency filter
+                    if (currentTrack.value && oldFreq !== freq) {
+                        if (freq && currentTrack.value.frequency !== freq) {
+                            // Stop playback
+                            if (audio.value) {
+                                audio.value.pause();
+                                audio.value.src = '';
+                            }
+                            currentTrack.value = null;
+                            currentIndex.value = -1;
+                            isPlaying.value = false;
+                            currentTime.value = 0;
+                            duration.value = 0;
+                        }
+                    }
                 }
 
                 function prevDate() {
                     const idx = availableDates.value.indexOf(selectedDate.value);
                     if (idx > 0) {
-                        selectedDate.value = availableDates.value[idx - 1];
+                        selectDate(availableDates.value[idx - 1]);
                     }
                 }
 
                 function nextDate() {
                     const idx = availableDates.value.indexOf(selectedDate.value);
                     if (idx < availableDates.value.length - 1) {
-                        selectedDate.value = availableDates.value[idx + 1];
+                        selectDate(availableDates.value[idx + 1]);
                     }
                 }
 
@@ -775,7 +913,7 @@
                     }));
                 }
 
-                // Calculate style for a sub-segment
+                // Calculate style for a sub-segment (supports cross-day negative values)
                 function getSubSegmentStyle(seg) {
                     const dur = visibleDuration.value;
                     const startTime = viewStartTime.value;
@@ -786,8 +924,21 @@
                         return { display: 'none' };
                     }
 
+                    // Calculate left (may be negative for cross-day recordings)
                     const left = ((seg.start - startTime) / dur) * 100;
                     const width = Math.max(0.3, ((seg.end - seg.start) / dur) * 100);
+
+                    // Clamp negative left to 0, adjust width accordingly
+                    if (left < 0) {
+                        const clampedWidth = width + left;  // left is negative, so this reduces width
+                        if (clampedWidth <= 0.3) {
+                            return { display: 'none' };
+                        }
+                        return {
+                            left: '0%',
+                            width: `${clampedWidth}%`
+                        };
+                    }
 
                     return {
                         left: `${left}%`,
@@ -815,7 +966,15 @@
 
                 // Audio control
                 async function analyzeRecording(recording) {
-                    if (analysisCache.has(recording.filename)) {
+                    // Check if recording is recent (within 2 hours and no newer file with same frequency)
+                    const isRecent = SilenceAnalyzer.isRecordingRecent(
+                        recording.filename,
+                        2 * 60 * 60 * 1000,
+                        recordings.value
+                    );
+
+                    // Only use memory cache for non-recent recordings
+                    if (!isRecent && analysisCache.has(recording.filename)) {
                         return analysisCache.get(recording.filename);
                     }
 
@@ -829,6 +988,7 @@
                             {
                                 silenceThreshold: 0.01,
                                 minSilenceDuration: 2,
+                                allRecordings: recordings.value,
                                 onProgress: ({ stage, progress }) => {
                                     analysisState.value = stage;
                                     analysisProgress.value = Math.round(progress * 100);
@@ -859,6 +1019,20 @@
                     }
                 }
 
+                // Force refresh: clear cache and re-analyze
+                async function refreshRecording(recording) {
+                    console.log('[RadioArchive] Force refreshing:', recording.filename);
+
+                    // Clear memory cache
+                    analysisCache.delete(recording.filename);
+
+                    // Clear IndexedDB cache
+                    await SilenceAnalyzer.deleteFromCache(recording.filename);
+
+                    // Re-analyze (will download fresh)
+                    await analyzeRecording(recording);
+                }
+
                 function initAudio() {
                     if (!audio.value) {
                         audio.value = new Audio();
@@ -884,8 +1058,15 @@
                         return;
                     }
 
-                    // If it's a new recording, analyze it first
-                    if (!analysisCache.has(recording.filename)) {
+                    // Check if analysis is needed (new recording or recent recording that may have changed)
+                    const isRecent = SilenceAnalyzer.isRecordingRecent(
+                        recording.filename,
+                        2 * 60 * 60 * 1000,
+                        recordings.value
+                    );
+                    const needsAnalysis = !analysisCache.has(recording.filename) || isRecent;
+
+                    if (needsAnalysis) {
                         await analyzeRecording(recording);
                     }
 
@@ -1442,6 +1623,7 @@
                     availableFreqs,
                     freqStats,
                     filteredRecordings,
+                    timelineRecordings,
                     currentAnalysis,
                     timelineTicks,
                     visibleDurationLabel,
@@ -1460,6 +1642,7 @@
                     formatSegmentTitle,
                     getAnalysisStateText,
                     play,
+                    refreshRecording,
                     playAtPosition,
                     togglePlay,
                     playPrev,
@@ -1568,7 +1751,7 @@
                                             </span>
                                         </div>
                                         <div class="timeline-track" ref="timelineRef">
-                                            <template v-for="rec in filteredRecordings" :key="rec.filename">
+                                            <template v-for="rec in timelineRecordings" :key="rec.filename + (rec.isCrossDay ? '-crossday' : '')">
                                                 <!-- Base layer: full duration (light color) -->
                                                 <div
                                                     class="timeline-segment base"
@@ -1606,15 +1789,11 @@
                             <!-- Player -->
                             <div class="radio-archive-section">
                                 <div class="player-container">
-                                    <!-- Analysis progress (inline) -->
+                                    <!-- Analysis status (inline) -->
                                     <div class="player-analysis" v-if="analysisState !== 'idle' && analysisState !== 'ready'">
                                         <div class="analysis-info">
                                             <span class="analysis-spinner-small"></span>
                                             <span class="analysis-text">{{ getAnalysisStateText() }}</span>
-                                            <span class="analysis-percent">{{ analysisProgress }}%</span>
-                                        </div>
-                                        <div class="analysis-bar-inline">
-                                            <div class="analysis-bar-fill" :style="{ width: analysisProgress + '%' }"></div>
                                         </div>
                                     </div>
 
@@ -1669,15 +1848,16 @@
                                             <option value="2">2.0x</option>
                                         </select>
 
-                                        <label class="continuous-play">
-                                            <input type="checkbox" v-model="continuousPlay">
-                                            <span>{{ t('auto') }}</span>
-                                        </label>
-
-                                        <label class="skip-silence">
-                                            <input type="checkbox" v-model="skipSilence">
-                                            <span>{{ t('skipSilence') }}</span>
-                                        </label>
+                                        <div class="player-options">
+                                            <label class="continuous-play">
+                                                <input type="checkbox" v-model="continuousPlay">
+                                                <span>{{ t('auto') }}</span>
+                                            </label>
+                                            <label class="skip-silence">
+                                                <input type="checkbox" v-model="skipSilence">
+                                                <span>{{ t('skipSilence') }}</span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1697,7 +1877,15 @@
                                             @click="play(rec, idx)">
                                             <span class="rec-icon">{{ isCurrentlyPlaying(rec) ? '&#9654;' : '&#9679;' }}</span>
                                             <span class="rec-time">{{ formatDisplayTime(rec) }}</span>
-                                            <span class="rec-filename">{{ rec.filename }}</span>
+                                            <span class="rec-filename-group">
+                                                <span class="rec-filename">{{ rec.filename }}</span>
+                                                <button
+                                                    class="rec-refresh-btn"
+                                                    @click.stop="refreshRecording(rec)"
+                                                    :title="t('refresh')">
+                                                    &#8635;
+                                                </button>
+                                            </span>
                                             <span class="rec-duration">{{ rec.audioDuration ? formatTime(rec.audioDuration) : '--:--' }}</span>
                                         </li>
                                     </ul>
