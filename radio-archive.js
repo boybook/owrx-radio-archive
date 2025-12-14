@@ -141,16 +141,31 @@
             if (!match) return null;
 
             const [, yy, mm, dd, hh, min, ss, freq] = match;
-            const year = 2000 + parseInt(yy, 10);
-            const month = parseInt(mm, 10) - 1;
-            const day = parseInt(dd, 10);
-            const hours = parseInt(hh, 10);
-            const minutes = parseInt(min, 10);
-            const seconds = parseInt(ss, 10);
+            // 文件名中的时间是 UTC 时间
+            const utcYear = 2000 + parseInt(yy, 10);
+            const utcMonth = parseInt(mm, 10) - 1;
+            const utcDay = parseInt(dd, 10);
+            const utcHours = parseInt(hh, 10);
+            const utcMinutes = parseInt(min, 10);
+            const utcSeconds = parseInt(ss, 10);
             const frequency = parseInt(freq, 10);
 
-            const date = new Date(year, month, day, hours, minutes, seconds);
-            const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            // 创建 UTC 时间的 Date 对象
+            const date = new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHours, utcMinutes, utcSeconds));
+
+            // dateKey 基于本地时区的日期（用于日期选择器）
+            const localYear = date.getFullYear();
+            const localMonth = date.getMonth() + 1;
+            const localDay = date.getDate();
+            const dateKey = `${localYear}-${String(localMonth).padStart(2, '0')}-${String(localDay).padStart(2, '0')}`;
+
+            // hours/minutes/seconds 使用本地时区的值（用于显示）
+            const hours = date.getHours();
+            const minutes = date.getMinutes();
+            const seconds = date.getSeconds();
+
+            // timeOfDay 基于本地时区（用于时间轴定位）
+            const timeOfDay = hours * 3600 + minutes * 60 + seconds;
 
             return {
                 filename,
@@ -161,7 +176,7 @@
                 seconds,
                 frequency,
                 freqMHz: frequency / 1000,
-                timeOfDay: hours * 3600 + minutes * 60 + seconds,
+                timeOfDay,
                 href: `files/${filename}`,
                 audioDuration: null  // Initialize for Vue reactivity
             };
@@ -703,20 +718,21 @@
                     return currentTrack.value?.filename === rec.filename;
                 }
 
-                // Playhead position on timeline (支持缩放)
+                // Playhead position on timeline (支持缩放，显示实时播放进度)
                 function getPlayheadStyle() {
                     if (!currentTrack.value) return { display: 'none' };
 
-                    const trackTime = currentTrack.value.timeOfDay;
+                    // 计算当前播放位置：录音开始时间 + 当前播放进度
+                    const playheadTime = currentTrack.value.timeOfDay + currentTime.value;
                     const startTime = viewStartTime.value;
                     const endTime = viewEndTime.value;
 
                     // 如果播放头在可视范围外，隐藏
-                    if (trackTime < startTime || trackTime > endTime) {
+                    if (playheadTime < startTime || playheadTime > endTime) {
                         return { display: 'none' };
                     }
 
-                    const left = ((trackTime - startTime) / visibleDuration.value) * 100;
+                    const left = ((playheadTime - startTime) / visibleDuration.value) * 100;
                     return { left: `${left}%` };
                 }
 
