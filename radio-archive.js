@@ -702,6 +702,11 @@
                     // 只响应鼠标左键或触摸
                     if (e.pointerType === 'mouse' && e.button !== 0) return;
 
+                    // 如果点击的是录音片段，不启动拖拽，让 click 事件处理
+                    if (e.target.closest('.timeline-segment')) {
+                        return;
+                    }
+
                     isDragging.value = true;
                     dragStartX.value = e.clientX;
                     dragStartViewTime.value = viewStartTime.value;
@@ -755,6 +760,11 @@
                 }
 
                 function handleTouchStart(e) {
+                    // 如果触摸的是录音片段，不处理，让 click 事件处理
+                    if (e.target.closest('.timeline-segment')) {
+                        return;
+                    }
+
                     if (e.touches.length === 2) {
                         // 双指：缩放
                         isTouchZooming = true;
