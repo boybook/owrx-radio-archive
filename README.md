@@ -64,7 +64,7 @@ plugins/receiver/radio-archive/
 
 ```html
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="/static/plugins/receiver/radio-archive/radio-archive.js"></script>
+<script src="static/plugins/receiver/radio-archive/radio-archive.js"></script>
 ```
 
 ### 3. 配置录音保留数量（可选）
