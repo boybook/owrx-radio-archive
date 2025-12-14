@@ -519,11 +519,21 @@
     min-width: 70px;
 }
 
+.recording-item .rec-filename {
+    font-size: 11px;
+    color: #666;
+    font-family: monospace;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin: 0 8px;
+}
+
 .recording-item .rec-duration {
     font-size: 12px;
     color: #555;
-    min-width: 60px;
-    margin-left: auto;
+    min-width: 50px;
     text-align: right;
 }
 
@@ -607,4 +617,105 @@
     .player-spacer {
         display: none;
     }
+}
+
+/* ============================================
+   Timeline Segments - Base (full duration) vs Active (non-silence)
+   ============================================ */
+
+/* Base layer: full recording duration, light color */
+.timeline-segment.base {
+    background: #2a3a2a;
+    opacity: 1;
+    z-index: 1;
+}
+
+.timeline-segment.base:hover {
+    background: #333;
+}
+
+.timeline-segment.base.playing {
+    background: #1a2a3a;
+}
+
+/* Active layer: non-silence segments, bright green */
+.timeline-segment.active {
+    background: #4CAF50;
+    opacity: 1;
+    z-index: 2;
+}
+
+.timeline-segment.active:hover {
+    background: #5CBF60;
+}
+
+.timeline-segment.active.playing {
+    background: #2196F3;
+}
+
+/* ============================================
+   Analysis Progress - Inline
+   ============================================ */
+.player-analysis {
+    margin-bottom: 12px;
+}
+
+.analysis-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.analysis-spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #333;
+    border-top-color: #4CAF50;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.analysis-text {
+    color: #ccc;
+}
+
+.analysis-percent {
+    color: #888;
+    margin-left: auto;
+    font-family: monospace;
+}
+
+.analysis-bar-inline {
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.analysis-bar-fill {
+    height: 100%;
+    background: #4CAF50;
+    transition: width 0.2s ease;
+}
+
+/* ============================================
+   Skip Silence Checkbox
+   ============================================ */
+.skip-silence {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #666;
+    cursor: pointer;
+}
+
+.skip-silence input {
+    accent-color: #4CAF50;
 }

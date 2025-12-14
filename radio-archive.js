@@ -51,6 +51,249 @@
     }
 
     // ==========================================
+    // SilenceAnalyzer - Audio silence detection with IndexedDB caching
+    // ==========================================
+    const SilenceAnalyzer = {
+        dbName: 'RadioArchiveCache',
+        storeName: 'silenceMap',
+        db: null,
+
+        // Initialize IndexedDB
+        async initDB() {
+            if (this.db) return this.db;
+
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(this.dbName, 1);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    this.db = request.result;
+                    resolve(this.db);
+                };
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(this.storeName)) {
+                        db.createObjectStore(this.storeName, { keyPath: 'filename' });
+                    }
+                };
+            });
+        },
+
+        // Get from cache
+        async getFromCache(filename) {
+            try {
+                await this.initDB();
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction(this.storeName, 'readonly');
+                    const store = tx.objectStore(this.storeName);
+                    const request = store.get(filename);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => resolve(null);
+                });
+            } catch (e) {
+                console.warn('[SilenceAnalyzer] Cache read error:', e);
+                return null;
+            }
+        },
+
+        // Save to cache
+        async saveToCache(filename, data) {
+            try {
+                await this.initDB();
+                return new Promise((resolve) => {
+                    const tx = this.db.transaction(this.storeName, 'readwrite');
+                    const store = tx.objectStore(this.storeName);
+                    store.put({ filename, ...data, timestamp: Date.now() });
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => resolve();
+                });
+            } catch (e) {
+                console.warn('[SilenceAnalyzer] Cache write error:', e);
+            }
+        },
+
+        // Check if recording is recent based on filename timestamp (UTC)
+        isRecordingRecent(filename, thresholdMs = 2 * 60 * 60 * 1000) {
+            // Parse: REC-YYMMDD-HHMMSS-FREQ.mp3
+            const match = filename.match(/^REC-(\d{2})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-/i);
+            if (!match) return false;
+
+            const [, yy, mm, dd, hh, min, ss] = match;
+            const recordingTime = Date.UTC(
+                2000 + parseInt(yy, 10),
+                parseInt(mm, 10) - 1,
+                parseInt(dd, 10),
+                parseInt(hh, 10),
+                parseInt(min, 10),
+                parseInt(ss, 10)
+            );
+
+            const now = Date.now();
+            return (now - recordingTime) < thresholdMs;
+        },
+
+        // Main analyze function
+        async analyze(audioUrl, filename, options = {}) {
+            const {
+                silenceThreshold = 0.01,
+                minSilenceDuration = 2,
+                blockDuration = 0.1,
+                onProgress = null
+            } = options;
+
+            // 1. Check if recording is recent (within 2 hours) - skip cache for recent recordings
+            const isRecent = this.isRecordingRecent(filename);
+
+            // 2. Check cache (skip for recent recordings that might still be recording)
+            if (!isRecent) {
+                const cached = await this.getFromCache(filename);
+                if (cached && cached.segments) {
+                    console.log('[SilenceAnalyzer] Using cached data for', filename);
+                    if (onProgress) onProgress({ stage: 'ready', progress: 1 });
+                    return cached;
+                }
+            } else {
+                console.log('[SilenceAnalyzer] Skipping cache for recent recording:', filename);
+            }
+
+            // 3. Download complete file
+            console.log('[SilenceAnalyzer] Downloading', audioUrl);
+            if (onProgress) onProgress({ stage: 'downloading', progress: 0 });
+
+            const response = await fetch(audioUrl);
+            const contentLength = response.headers.get('content-length');
+            const total = parseInt(contentLength, 10) || 0;
+
+            const reader = response.body.getReader();
+            const chunks = [];
+            let loaded = 0;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                loaded += value.length;
+                if (onProgress && total) {
+                    onProgress({ stage: 'downloading', progress: loaded / total });
+                }
+            }
+
+            const arrayBuffer = new Uint8Array(loaded);
+            let offset = 0;
+            for (const chunk of chunks) {
+                arrayBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+
+            // 3. Decode audio
+            console.log('[SilenceAnalyzer] Decoding audio...');
+            if (onProgress) onProgress({ stage: 'decoding', progress: 0 });
+
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.buffer);
+            audioContext.close();
+
+            // 4. Analyze silence
+            console.log('[SilenceAnalyzer] Analyzing silence...');
+            if (onProgress) onProgress({ stage: 'analyzing', progress: 0 });
+
+            const channelData = audioBuffer.getChannelData(0);
+            const sampleRate = audioBuffer.sampleRate;
+            const blockSize = Math.floor(sampleRate * blockDuration);
+
+            const segments = [];
+            let currentSegment = null;
+
+            for (let i = 0; i < channelData.length; i += blockSize) {
+                // Calculate RMS
+                let sum = 0;
+                const end = Math.min(i + blockSize, channelData.length);
+                for (let j = i; j < end; j++) {
+                    sum += channelData[j] * channelData[j];
+                }
+                const rms = Math.sqrt(sum / (end - i));
+                const isSilence = rms < silenceThreshold;
+
+                const timePos = i / sampleRate;
+
+                if (!currentSegment || currentSegment.isSilence !== isSilence) {
+                    if (currentSegment) {
+                        currentSegment.end = timePos;
+                        segments.push(currentSegment);
+                    }
+                    currentSegment = { start: timePos, isSilence };
+                }
+
+                // Progress callback
+                if (onProgress && i % (blockSize * 50) === 0) {
+                    onProgress({ stage: 'analyzing', progress: i / channelData.length });
+                }
+            }
+
+            // Last segment
+            if (currentSegment) {
+                currentSegment.end = audioBuffer.duration;
+                segments.push(currentSegment);
+            }
+
+            // 5. Merge short segments
+            const mergedSegments = this.mergeSegments(segments, minSilenceDuration);
+
+            // 6. Generate result
+            const result = {
+                duration: audioBuffer.duration,
+                sampleRate: sampleRate,
+                segments: mergedSegments,
+                activeSegments: mergedSegments.filter(s => !s.isSilence),
+                silenceSegments: mergedSegments.filter(s => s.isSilence),
+                totalActiveTime: mergedSegments
+                    .filter(s => !s.isSilence)
+                    .reduce((sum, s) => sum + (s.end - s.start), 0)
+            };
+
+            // 7. Save to cache
+            await this.saveToCache(filename, result);
+
+            if (onProgress) onProgress({ stage: 'ready', progress: 1 });
+            console.log('[SilenceAnalyzer] Analysis complete:', result.activeSegments.length, 'active segments');
+
+            return result;
+        },
+
+        // Merge short segments
+        mergeSegments(segments, minSilenceDuration) {
+            const result = [];
+            let pending = null;
+
+            for (const seg of segments) {
+                const duration = seg.end - seg.start;
+
+                // Short silence merges into previous active segment
+                if (seg.isSilence && duration < minSilenceDuration) {
+                    if (pending && !pending.isSilence) {
+                        pending.end = seg.end;
+                    }
+                    continue;
+                }
+
+                // Very short active segment (< 0.5s) might be noise, skip
+                if (!seg.isSilence && duration < 0.5) {
+                    continue;
+                }
+
+                if (pending && pending.isSilence === seg.isSilence) {
+                    pending.end = seg.end;
+                } else {
+                    if (pending) result.push(pending);
+                    pending = { ...seg };
+                }
+            }
+
+            if (pending) result.push(pending);
+            return result;
+        }
+    };
+
+    // ==========================================
     // i18n - Internationalization
     // ==========================================
     const i18n = {
@@ -69,7 +312,12 @@
                 reset: 'Reset',
                 noRecordings: 'No audio recordings found.',
                 fileNamingHint: 'Audio files should be named: REC-YYMMDD-HHMMSS-FREQ.mp3',
-                loading: 'Loading...'
+                loading: 'Loading...',
+                downloadingAudio: 'Downloading...',
+                decodingAudio: 'Decoding...',
+                analyzingSilence: 'Analyzing...',
+                skipSilence: 'Skip silence',
+                activeSegments: 'segments'
             },
             zh: {
                 receivedFiles: '已接收文件',
@@ -85,7 +333,12 @@
                 reset: '重置',
                 noRecordings: '未找到录音文件',
                 fileNamingHint: '音频文件命名格式：REC-YYMMDD-HHMMSS-FREQ.mp3',
-                loading: '加载中...'
+                loading: '加载中...',
+                downloadingAudio: '下载中...',
+                decodingAudio: '解码中...',
+                analyzingSilence: '分析中...',
+                skipSilence: '跳过静噪',
+                activeSegments: '个片段'
             },
             ja: {
                 receivedFiles: '受信ファイル',
@@ -101,7 +354,12 @@
                 reset: 'リセット',
                 noRecordings: '録音ファイルが見つかりません',
                 fileNamingHint: 'ファイル名形式：REC-YYMMDD-HHMMSS-FREQ.mp3',
-                loading: '読み込み中...'
+                loading: '読み込み中...',
+                downloadingAudio: 'ダウンロード中...',
+                decodingAudio: 'デコード中...',
+                analyzingSilence: '分析中...',
+                skipSilence: '無音スキップ',
+                activeSegments: 'セグメント'
             }
         },
 
@@ -216,7 +474,7 @@
         console.log('[RadioArchive] Vue ready, creating app...');
         console.log('[RadioArchive] Vue version:', Vue.version);
 
-        const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
+        const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
 
         const app = createApp({
             setup() {
@@ -238,6 +496,12 @@
                 const volume = ref(1);
                 const playbackRate = ref(1);
                 const continuousPlay = ref(true);
+
+                // Silence analysis state
+                const analysisState = ref('idle');  // 'idle' | 'downloading' | 'decoding' | 'analyzing' | 'ready'
+                const analysisProgress = ref(0);
+                const analysisCache = reactive(new Map());  // Map<filename, analysisResult>
+                const skipSilence = ref(true);  // 默认开启跳过静噪
 
                 // ==========================================
                 // Computed
@@ -276,6 +540,12 @@
                             return true;
                         })
                         .sort((a, b) => a.date - b.date);
+                });
+
+                // Current track's analysis result
+                const currentAnalysis = computed(() => {
+                    if (!currentTrack.value) return null;
+                    return analysisCache.get(currentTrack.value.filename) || null;
                 });
 
                 // For timeline positioning
@@ -362,118 +632,6 @@
                     }
                 });
 
-                // Preload state
-                const isPreloading = ref(false);
-                const preloadProgress = ref(0);
-
-                // ==========================================
-                // Preload Functions
-                // ==========================================
-
-                // Preload single recording duration
-                function preloadDuration(recording) {
-                    return new Promise((resolve) => {
-                        // Skip if already loaded (caching)
-                        if (recording.audioDuration && isFinite(recording.audioDuration)) {
-                            console.log('[RadioArchive] Using cached duration for', recording.filename, ':', recording.audioDuration);
-                            resolve();
-                            return;
-                        }
-
-                        const tempAudio = new Audio();
-                        // Use 'auto' instead of 'metadata' to load enough data for duration
-                        tempAudio.preload = 'auto';
-
-                        let resolved = false;
-
-                        const cleanup = () => {
-                            tempAudio.removeEventListener('durationchange', onDurationChange);
-                            tempAudio.removeEventListener('error', onError);
-                            tempAudio.pause();
-                            // Don't set src = '' - it causes "Invalid URI" errors
-                        };
-
-                        // Use durationchange event instead of loadedmetadata
-                        // loadedmetadata may return Infinity for chunked transfer encoding
-                        const onDurationChange = () => {
-                            console.log('[RadioArchive] durationchange for', recording.filename, 'duration:', tempAudio.duration);
-                            // Only process when duration is finite and positive
-                            if (isFinite(tempAudio.duration) && tempAudio.duration > 0) {
-                                if (resolved) return;
-                                resolved = true;
-
-                                // Find and replace in array to trigger Vue reactivity
-                                const index = recordings.value.findIndex(r => r.filename === recording.filename);
-                                if (index !== -1) {
-                                    recordings.value[index] = {
-                                        ...recordings.value[index],
-                                        audioDuration: tempAudio.duration
-                                    };
-                                }
-                                console.log('[RadioArchive] Loaded duration for', recording.filename, ':', tempAudio.duration);
-                                cleanup();
-                                resolve();
-                            }
-                        };
-
-                        const onError = (e) => {
-                            console.log('[RadioArchive] onError fired for', recording.filename, e);
-                            if (resolved) return;
-                            resolved = true;
-                            console.warn('[RadioArchive] Failed to load metadata for', recording.filename);
-                            cleanup();
-                            resolve();
-                        };
-
-                        tempAudio.addEventListener('durationchange', onDurationChange);
-                        tempAudio.addEventListener('error', onError);
-
-                        // Timeout protection
-                        setTimeout(() => {
-                            if (!resolved) {
-                                resolved = true;
-                                console.warn('[RadioArchive] Timeout loading metadata for', recording.filename);
-                                cleanup();
-                                resolve();
-                            }
-                        }, 5000);
-
-                        tempAudio.src = recording.href;
-                        tempAudio.load();  // Force browser to start loading
-                        console.log('[RadioArchive] Started preload for', recording.filename);
-                    });
-                }
-
-                // Batch preload current filtered recordings
-                async function preloadCurrentRecordings() {
-                    const toPreload = filteredRecordings.value.filter(
-                        r => !r.audioDuration || !isFinite(r.audioDuration)
-                    );
-
-                    if (toPreload.length === 0) {
-                        console.log('[RadioArchive] All recordings already preloaded');
-                        return;
-                    }
-
-                    console.log('[RadioArchive] Preloading', toPreload.length, 'recordings...');
-                    isPreloading.value = true;
-                    preloadProgress.value = 0;
-
-                    const BATCH_SIZE = 3;
-                    let loaded = 0;
-
-                    for (let i = 0; i < toPreload.length; i += BATCH_SIZE) {
-                        const batch = toPreload.slice(i, i + BATCH_SIZE);
-                        await Promise.all(batch.map(preloadDuration));
-                        loaded += batch.length;
-                        preloadProgress.value = Math.round((loaded / toPreload.length) * 100);
-                    }
-
-                    isPreloading.value = false;
-                    console.log('[RadioArchive] Preload complete');
-                    // Note: No need for deep copy here - each preload updates the array element individually
-                }
-
                 // ==========================================
                 // Methods
                 // ==========================================
@@ -516,6 +674,33 @@
                     }
                 }
 
+                // Load cached analysis data for all recordings
+                async function loadCachedAnalysis() {
+                    console.log('[RadioArchive] Loading cached analysis data...');
+                    let loadedCount = 0;
+
+                    for (let i = 0; i < recordings.value.length; i++) {
+                        const rec = recordings.value[i];
+                        const cached = await SilenceAnalyzer.getFromCache(rec.filename);
+
+                        if (cached && cached.segments) {
+                            // Update analysisCache
+                            analysisCache.set(rec.filename, cached);
+
+                            // Update recording duration
+                            if (cached.duration && isFinite(cached.duration)) {
+                                recordings.value[i] = {
+                                    ...recordings.value[i],
+                                    audioDuration: cached.duration
+                                };
+                            }
+                            loadedCount++;
+                        }
+                    }
+
+                    console.log('[RadioArchive] Loaded cached analysis for', loadedCount, 'recordings');
+                }
+
                 function switchView(view) {
                     activeView.value = view;
                 }
@@ -551,27 +736,58 @@
                     return idx < availableDates.value.length - 1;
                 }
 
-                // Timeline segment position (支持缩放)
-                function getSegmentStyle(rec) {
-                    const duration = visibleDuration.value;
+                // Get the base segment for a recording (full duration, shown as background)
+                function getRecordingBaseSegment(rec) {
+                    const analysis = analysisCache.get(rec.filename);
+                    const actualDuration = analysis?.duration
+                        || (rec.audioDuration && isFinite(rec.audioDuration) ? rec.audioDuration : 60);
+
+                    return {
+                        start: rec.timeOfDay,
+                        end: rec.timeOfDay + actualDuration,
+                        audioStart: 0,
+                        audioEnd: actualDuration,
+                        recording: rec
+                    };
+                }
+
+                // Check if a recording has been analyzed
+                function isRecordingAnalyzed(rec) {
+                    const analysis = analysisCache.get(rec.filename);
+                    return analysis && analysis.activeSegments && analysis.activeSegments.length > 0;
+                }
+
+                // Get active segments for a recording (only non-silence parts)
+                function getRecordingActiveSegments(rec) {
+                    const analysis = analysisCache.get(rec.filename);
+
+                    if (!analysis || !analysis.activeSegments || analysis.activeSegments.length === 0) {
+                        return [];
+                    }
+
+                    // Return active segments mapped to day time
+                    return analysis.activeSegments.map(seg => ({
+                        start: rec.timeOfDay + seg.start,
+                        end: rec.timeOfDay + seg.end,
+                        audioStart: seg.start,
+                        audioEnd: seg.end,
+                        recording: rec
+                    }));
+                }
+
+                // Calculate style for a sub-segment
+                function getSubSegmentStyle(seg) {
+                    const dur = visibleDuration.value;
                     const startTime = viewStartTime.value;
                     const endTime = viewEndTime.value;
 
-                    // 计算录音在可视窗口中的位置
-                    const recStart = rec.timeOfDay;
-                    const actualDuration = (rec.audioDuration && isFinite(rec.audioDuration))
-                        ? rec.audioDuration
-                        : 60;
-                    const recEnd = recStart + actualDuration;
-
-                    // 如果录音完全在可视范围外，隐藏
-                    if (recEnd < startTime || recStart > endTime) {
+                    // Outside visible range
+                    if (seg.end < startTime || seg.start > endTime) {
                         return { display: 'none' };
                     }
 
-                    // 计算相对于可视窗口的位置
-                    const left = ((recStart - startTime) / duration) * 100;
-                    const width = Math.max(0.3, (actualDuration / duration) * 100);
+                    const left = ((seg.start - startTime) / dur) * 100;
+                    const width = Math.max(0.3, ((seg.end - seg.start) / dur) * 100);
 
                     return {
                         left: `${left}%`,
@@ -579,8 +795,71 @@
                     };
                 }
 
+                // Format segment title for tooltip
+                function formatSegmentTitle(seg) {
+                    const startTime = new Date(seg.recording.date.getTime() + seg.audioStart * 1000);
+                    const timeStr = FileParser.formatTime(startTime);
+                    const durationStr = FileParser.formatDuration(seg.audioEnd - seg.audioStart);
+                    return `${timeStr} (${durationStr})`;
+                }
+
+                // Get analysis state text for UI
+                function getAnalysisStateText() {
+                    const texts = {
+                        downloading: t('downloadingAudio'),
+                        decoding: t('decodingAudio'),
+                        analyzing: t('analyzingSilence')
+                    };
+                    return texts[analysisState.value] || '';
+                }
+
                 // Audio control
-                function play(recording, index) {
+                async function analyzeRecording(recording) {
+                    if (analysisCache.has(recording.filename)) {
+                        return analysisCache.get(recording.filename);
+                    }
+
+                    analysisState.value = 'downloading';
+                    analysisProgress.value = 0;
+
+                    try {
+                        const result = await SilenceAnalyzer.analyze(
+                            recording.href,
+                            recording.filename,
+                            {
+                                silenceThreshold: 0.01,
+                                minSilenceDuration: 2,
+                                onProgress: ({ stage, progress }) => {
+                                    analysisState.value = stage;
+                                    analysisProgress.value = Math.round(progress * 100);
+                                }
+                            }
+                        );
+
+                        analysisCache.set(recording.filename, result);
+
+                        // 同步更新录音列表中的时长，触发 Vue 响应式更新
+                        if (result && result.duration) {
+                            const index = recordings.value.findIndex(r => r.filename === recording.filename);
+                            if (index !== -1) {
+                                recordings.value[index] = {
+                                    ...recordings.value[index],
+                                    audioDuration: result.duration
+                                };
+                                console.log('[RadioArchive] Updated recording duration:', recording.filename, result.duration);
+                            }
+                        }
+
+                        analysisState.value = 'ready';
+                        return result;
+                    } catch (e) {
+                        console.error('[RadioArchive] Analysis failed:', e);
+                        analysisState.value = 'idle';
+                        return null;
+                    }
+                }
+
+                function initAudio() {
                     if (!audio.value) {
                         audio.value = new Audio();
                         audio.value.addEventListener('timeupdate', onTimeUpdate);
@@ -590,9 +869,13 @@
                         audio.value.addEventListener('play', () => isPlaying.value = true);
                         audio.value.addEventListener('pause', () => isPlaying.value = false);
                     }
+                }
 
-                    if (currentTrack.value?.filename === recording.filename) {
-                        // Toggle play/pause
+                async function play(recording, index, startPosition = 0) {
+                    initAudio();
+
+                    // If clicking on same track, toggle play/pause
+                    if (currentTrack.value?.filename === recording.filename && startPosition === 0) {
                         if (isPlaying.value) {
                             audio.value.pause();
                         } else {
@@ -601,21 +884,54 @@
                         return;
                     }
 
+                    // If it's a new recording, analyze it first
+                    if (!analysisCache.has(recording.filename)) {
+                        await analyzeRecording(recording);
+                    }
+
                     currentTrack.value = recording;
                     currentIndex.value = index !== undefined ? index : filteredRecordings.value.indexOf(recording);
 
-                    // Use preloaded duration if available
-                    if (recording.audioDuration && isFinite(recording.audioDuration)) {
+                    // Use analysis duration or preloaded duration
+                    const analysis = analysisCache.get(recording.filename);
+                    if (analysis && analysis.duration) {
+                        duration.value = analysis.duration;
+                    } else if (recording.audioDuration && isFinite(recording.audioDuration)) {
                         duration.value = recording.audioDuration;
-                        console.log('[RadioArchive] Using preloaded duration:', duration.value);
                     } else {
                         duration.value = 0;
+                    }
+
+                    // 如果开启跳过静噪且未指定起始位置，检查是否需要跳到第一个有效段
+                    let effectiveStartPosition = startPosition;
+                    if (skipSilence.value && startPosition === 0 && analysis && analysis.activeSegments && analysis.activeSegments.length > 0) {
+                        const firstActive = analysis.activeSegments[0];
+                        // 如果第一个有效段不是从开头开始，跳到该段起始位置
+                        if (firstActive.start > 0.5) {  // 允许0.5秒的容差
+                            effectiveStartPosition = firstActive.start;
+                            console.log('[RadioArchive] Skipping initial silence, jumping to', effectiveStartPosition);
+                        }
                     }
 
                     audio.value.src = recording.href;
                     audio.value.volume = volume.value;
                     audio.value.playbackRate = playbackRate.value;
+
+                    // If startPosition specified, seek after load
+                    if (effectiveStartPosition > 0) {
+                        audio.value.addEventListener('loadedmetadata', function seekOnce() {
+                            audio.value.currentTime = effectiveStartPosition;
+                            audio.value.removeEventListener('loadedmetadata', seekOnce);
+                        });
+                    }
+
                     audio.value.play();
+                }
+
+                // Play recording at specific position (for timeline segment click)
+                function playAtPosition(recording, position) {
+                    const index = filteredRecordings.value.indexOf(recording);
+                    play(recording, index, position);
                 }
 
                 function togglePlay() {
@@ -710,6 +1026,42 @@
 
                 function onTimeUpdate() {
                     currentTime.value = audio.value.currentTime;
+
+                    // 如果未开启跳过静噪，让音频自然播放，不做任何干预
+                    if (!skipSilence.value) {
+                        return;
+                    }
+
+                    // Skip silence logic - only when skipSilence is enabled
+                    const analysis = currentAnalysis.value;
+                    if (!analysis) {
+                        return;
+                    }
+
+                    // 如果没有有效音频段，不跳过，让音频正常播放到结束
+                    if (!analysis.activeSegments || analysis.activeSegments.length === 0) {
+                        return;
+                    }
+
+                    // 检查当前是否在静噪段
+                    const currentSeg = analysis.segments.find(
+                        s => currentTime.value >= s.start && currentTime.value < s.end
+                    );
+
+                    if (currentSeg && currentSeg.isSilence) {
+                        // Find next active segment
+                        const nextActive = analysis.activeSegments.find(s => s.start > currentTime.value);
+                        if (nextActive) {
+                            console.log('[RadioArchive] Skipping silence, jumping to', nextActive.start);
+                            audio.value.currentTime = nextActive.start;
+                        } else {
+                            // 没有更多有效段了，触发结束逻辑
+                            console.log('[RadioArchive] No more active segments, triggering end');
+                            // 停止播放，避免重复触发
+                            audio.value.pause();
+                            onEnded();
+                        }
+                    }
                 }
 
                 function onLoadedMetadata() {
@@ -1009,12 +1361,6 @@
                     }
                 });
 
-                // Watch for date/freq changes (preload disabled)
-                watch([selectedDate, selectedFreq], () => {
-                    console.log('[RadioArchive] Selection changed');
-                    // Preload disabled - duration will be fetched on playback
-                });
-
                 // Keyboard shortcut handler
                 function handleKeydown(e) {
                     // Only handle when not typing in an input
@@ -1048,9 +1394,10 @@
                 }
 
                 onMounted(() => {
-                    nextTick(() => {
+                    nextTick(async () => {
                         parseFilesFromDOM();
-                        // Preload disabled - duration will be fetched on playback
+                        // Load cached analysis data (duration, segments) from IndexedDB
+                        await loadCachedAnalysis();
                     });
 
                     // Add keyboard listener
@@ -1080,8 +1427,11 @@
                     volume,
                     playbackRate,
                     continuousPlay,
-                    isPreloading,
-                    preloadProgress,
+                    // Silence Analysis State
+                    analysisState,
+                    analysisProgress,
+                    analysisCache,
+                    skipSilence,
                     // Timeline Zoom State
                     zoomLevel,
                     viewStartTime,
@@ -1092,6 +1442,7 @@
                     availableFreqs,
                     freqStats,
                     filteredRecordings,
+                    currentAnalysis,
                     timelineTicks,
                     visibleDurationLabel,
                     // Methods
@@ -1102,8 +1453,14 @@
                     nextDate,
                     canPrevDate,
                     canNextDate,
-                    getSegmentStyle,
+                    getRecordingBaseSegment,
+                    isRecordingAnalyzed,
+                    getRecordingActiveSegments,
+                    getSubSegmentStyle,
+                    formatSegmentTitle,
+                    getAnalysisStateText,
                     play,
+                    playAtPosition,
                     togglePlay,
                     playPrev,
                     playNext,
@@ -1211,15 +1568,26 @@
                                             </span>
                                         </div>
                                         <div class="timeline-track" ref="timelineRef">
-                                            <div
-                                                v-for="(rec, idx) in filteredRecordings"
-                                                :key="rec.filename"
-                                                class="timeline-segment"
-                                                :class="{ playing: isCurrentlyPlaying(rec) }"
-                                                :style="getSegmentStyle(rec)"
-                                                :title="formatDisplayTime(rec)"
-                                                @click.stop="play(rec, idx)">
-                                            </div>
+                                            <template v-for="rec in filteredRecordings" :key="rec.filename">
+                                                <!-- Base layer: full duration (light color) -->
+                                                <div
+                                                    class="timeline-segment base"
+                                                    :class="{ playing: isCurrentlyPlaying(rec) }"
+                                                    :style="getSubSegmentStyle(getRecordingBaseSegment(rec))"
+                                                    :title="formatSegmentTitle(getRecordingBaseSegment(rec))"
+                                                    @click.stop="playAtPosition(rec, 0)">
+                                                </div>
+                                                <!-- Active layer: non-silence segments (green) -->
+                                                <div
+                                                    v-for="(seg, segIdx) in getRecordingActiveSegments(rec)"
+                                                    :key="rec.filename + '-active-' + segIdx"
+                                                    class="timeline-segment active"
+                                                    :class="{ playing: isCurrentlyPlaying(rec) }"
+                                                    :style="getSubSegmentStyle(seg)"
+                                                    :title="formatSegmentTitle(seg)"
+                                                    @click.stop="playAtPosition(seg.recording, seg.audioStart)">
+                                                </div>
+                                            </template>
                                             <div
                                                 class="timeline-playhead"
                                                 :style="getPlayheadStyle()"
@@ -1238,12 +1606,28 @@
                             <!-- Player -->
                             <div class="radio-archive-section">
                                 <div class="player-container">
-                                    <div class="player-now-playing">
+                                    <!-- Analysis progress (inline) -->
+                                    <div class="player-analysis" v-if="analysisState !== 'idle' && analysisState !== 'ready'">
+                                        <div class="analysis-info">
+                                            <span class="analysis-spinner-small"></span>
+                                            <span class="analysis-text">{{ getAnalysisStateText() }}</span>
+                                            <span class="analysis-percent">{{ analysisProgress }}%</span>
+                                        </div>
+                                        <div class="analysis-bar-inline">
+                                            <div class="analysis-bar-fill" :style="{ width: analysisProgress + '%' }"></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Normal playback info -->
+                                    <div class="player-now-playing" v-else>
                                         <span class="player-track-name">
                                             {{ currentTrack ? formatDisplayTime(currentTrack) + ' - ' + formatFreq(currentTrack.frequency) : t('noTrackSelected') }}
                                         </span>
                                         <span class="player-time">
                                             {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+                                            <template v-if="currentAnalysis">
+                                                ({{ currentAnalysis.activeSegments.length }} {{ t('activeSegments') }})
+                                            </template>
                                         </span>
                                     </div>
 
@@ -1289,6 +1673,11 @@
                                             <input type="checkbox" v-model="continuousPlay">
                                             <span>{{ t('auto') }}</span>
                                         </label>
+
+                                        <label class="skip-silence">
+                                            <input type="checkbox" v-model="skipSilence">
+                                            <span>{{ t('skipSilence') }}</span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -1297,9 +1686,6 @@
                             <div class="radio-archive-section">
                                 <div class="radio-archive-section-label">
                                     {{ t('recordings') }} ({{ filteredRecordings.length }})
-                                    <span v-if="isPreloading" style="margin-left: 10px; color: #888;">
-                                        {{ t('loading') }} {{ preloadProgress }}%
-                                    </span>
                                 </div>
                                 <div class="recording-list-container">
                                     <ul class="recording-list">
@@ -1311,6 +1697,7 @@
                                             @click="play(rec, idx)">
                                             <span class="rec-icon">{{ isCurrentlyPlaying(rec) ? '&#9654;' : '&#9679;' }}</span>
                                             <span class="rec-time">{{ formatDisplayTime(rec) }}</span>
+                                            <span class="rec-filename">{{ rec.filename }}</span>
                                             <span class="rec-duration">{{ rec.audioDuration ? formatTime(rec.audioDuration) : '--:--' }}</span>
                                         </li>
                                     </ul>
