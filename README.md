@@ -43,6 +43,8 @@ sudo nano /etc/openwebrx/bands.json
 sudo systemctl restart openwebrx
 ```
 
+5. 验证配置：进入 **Settings** 主界面，在 **Services** 列表中确认出现类型为 **AUDIO** 的服务
+
 ### 1. 安装插件文件
 
 将 `radio-archive` 文件夹放入 plugins 目录：
@@ -56,6 +58,8 @@ plugins/receiver/radio-archive/
 
 ### 2. 注入脚本
 
+由于 OpenWebRX+ 标准插件仅在 receiver 页面加载，而本插件需要在 `/files` 页面运行，因此需要通过 Photo description 注入脚本。
+
 在 **Settings → General Settings → Photo description** 中添加：
 
 ```html
@@ -63,13 +67,9 @@ plugins/receiver/radio-archive/
 <script src="/static/plugins/receiver/radio-archive/radio-archive.js"></script>
 ```
 
-### 3. 配置录音保留时间（可选）
+### 3. 配置录音保留数量（可选）
 
-编辑配置文件以保留更长时间的录音：
-
-```bash
-sudo nano /etc/openwebrx.conf.d/20-temporary-directory.conf
-```
+在 **Settings → General Settings → Receiver limits → Maximum number of files** 中调整保留的文件数量（默认 20 个）。
 
 ## 使用
 
