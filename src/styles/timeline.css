@@ -1,0 +1,170 @@
+/* Radio Archive - Timeline Styles */
+
+/* ============================================
+   Timeline - Clean Design with Zoom
+   ============================================ */
+.timeline-wrapper {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.timeline-container {
+    flex: 1;
+    background: #1a1a1a;
+    border-radius: 8px;
+    padding: 16px;
+    cursor: grab;
+    touch-action: none;
+    overflow: hidden;
+}
+
+.timeline-container.dragging {
+    cursor: grabbing;
+}
+
+.timeline-hours {
+    position: relative;
+    height: 16px;
+    font-size: 10px;
+    color: #444;
+    margin-bottom: 8px;
+    user-select: none;
+}
+
+.timeline-tick {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.timeline-track {
+    position: relative;
+    height: 40px;
+    background: #111;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.timeline-segment {
+    position: absolute;
+    height: 100%;
+    background: #3d8c40;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+    min-width: 3px;
+}
+
+.timeline-segment:hover {
+    opacity: 0.8;
+}
+
+.timeline-segment.playing {
+    background: #2196F3;
+}
+
+.timeline-playhead {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: #f44336;
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* Timeline Zoom Controls */
+.timeline-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.timeline-ctrl-btn {
+    width: 32px;
+    height: 32px;
+    background: #252525;
+    color: #888;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.timeline-ctrl-btn:hover:not(:disabled) {
+    background: #2d2d2d;
+    color: #fff;
+}
+
+.timeline-ctrl-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Timeline Zoom Info */
+.timeline-zoom-info {
+    margin-left: 8px;
+    font-size: 11px;
+    color: #666;
+    font-weight: normal;
+    text-transform: none;
+}
+
+/* ============================================
+   Timeline Segments - Base vs Active
+   ============================================ */
+
+/* Base layer: full recording duration, light color */
+.timeline-segment.base {
+    background: #2a3a2a;
+    opacity: 1;
+    z-index: 1;
+}
+
+.timeline-segment.base:hover {
+    background: #333;
+}
+
+.timeline-segment.base.playing {
+    background: #1a2a3a;
+}
+
+/* Active layer: non-silence segments, bright green */
+.timeline-segment.active {
+    background: #4CAF50;
+    opacity: 1;
+    z-index: 2;
+}
+
+.timeline-segment.active:hover {
+    background: #5CBF60;
+}
+
+.timeline-segment.active.playing {
+    background: #2196F3;
+}
+
+/* ============================================
+   Mobile Timeline
+   ============================================ */
+@media (max-width: 600px) {
+    .timeline-wrapper {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .timeline-controls {
+        flex-direction: row;
+        justify-content: center;
+    }
+
+    .timeline-ctrl-btn {
+        width: 40px;
+        height: 36px;
+    }
+}

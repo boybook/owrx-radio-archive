@@ -1,0 +1,197 @@
+/* Radio Archive - Main Styles */
+
+/* ============================================
+   View Toggle
+   ============================================ */
+.radio-archive-view {
+    display: none;
+}
+
+.radio-archive-view.active {
+    display: block;
+}
+
+/* ============================================
+   Tab Bar - Minimal
+   ============================================ */
+.radio-archive-tabs {
+    display: flex;
+    gap: 4px;
+    margin-top: 20px;
+    margin-bottom: 24px;
+    background: #1a1a1a;
+    padding: 4px;
+    border-radius: 8px;
+    width: fit-content;
+}
+
+.radio-archive-tabs .tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+}
+
+.radio-archive-tabs .tab-btn:hover {
+    color: #999;
+}
+
+.radio-archive-tabs .tab-btn.active {
+    background: #2d2d2d;
+    color: #fff;
+}
+
+/* ============================================
+   Section Spacing
+   ============================================ */
+.radio-archive-section {
+    margin-bottom: 24px;
+}
+
+.radio-archive-section-label {
+    font-size: 11px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+/* ============================================
+   Frequency Pills
+   ============================================ */
+.frequency-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.frequency-item {
+    padding: 8px 14px;
+    background: #252525;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s ease;
+    font-size: 13px;
+    color: #aaa;
+}
+
+.frequency-item:hover {
+    background: #2d2d2d;
+}
+
+.frequency-item.selected {
+    background: #3d8c40;
+    color: #fff;
+}
+
+.frequency-item .freq-count {
+    font-size: 11px;
+    color: #666;
+    background: #1a1a1a;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.frequency-item.selected .freq-count {
+    background: rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* ============================================
+   Date Navigation
+   ============================================ */
+.date-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.date-btn {
+    width: 32px;
+    height: 32px;
+    background: #252525;
+    color: #888;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s ease;
+}
+
+.date-btn:hover {
+    background: #2d2d2d;
+    color: #fff;
+}
+
+.date-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.date-input {
+    padding: 8px 12px;
+    background: #252525;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.date-input::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+    cursor: pointer;
+}
+
+/* ============================================
+   Empty State
+   ============================================ */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #444;
+    font-size: 13px;
+}
+
+/* ============================================
+   Scrollbar - Minimal
+   ============================================ */
+.recording-list-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.recording-list-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.recording-list-container::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 3px;
+}
+
+.recording-list-container::-webkit-scrollbar-thumb:hover {
+    background: #444;
+}
+
+/* ============================================
+   Mobile
+   ============================================ */
+@media (max-width: 600px) {
+    .radio-archive-tabs .tab-btn {
+        padding: 8px 14px;
+        font-size: 12px;
+    }
+
+    .frequency-item {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+}
