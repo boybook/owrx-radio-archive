@@ -1,0 +1,76 @@
+/* OpenWebRX+ Header Styles - Simplified for Development */
+
+.webrx-top-container {
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+}
+
+.webrx-top-bar {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    gap: 15px;
+}
+
+.webrx-top-logo {
+    height: 40px;
+    width: auto;
+}
+
+.webrx-rx-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 5px;
+    object-fit: cover;
+}
+
+.webrx-rx-texts {
+    flex: 1;
+}
+
+.webrx-rx-title {
+    font-size: 18px;
+    margin: 0;
+    color: #fff;
+}
+
+.webrx-rx-desc {
+    font-size: 12px;
+    color: #888;
+}
+
+.openwebrx-main-buttons {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+}
+
+.openwebrx-main-buttons .button {
+    display: inline-block;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: #fff;
+    font-size: 11px;
+    text-align: center;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.openwebrx-main-buttons .button:hover {
+    background: #3a3a3a;
+}
+
+.openwebrx-main-buttons .button svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+    margin: 0 auto 4px;
+}
+
+/* Hide description and arrow in dev mode */
+.openwebrx-description-container,
+.openwebrx-rx-details-arrow {
+    display: none;
+}

@@ -128,14 +128,14 @@ export default {
         }
     },
     emits: ['toggle', 'prev', 'next', 'seek', 'volume', 'speed', 'update:continuousPlay', 'update:skipSilence'],
-    setup() {
+    setup(props) {
         function getAnalysisStateText() {
             const texts = {
                 downloading: t('downloadingAudio'),
                 decoding: t('decodingAudio'),
                 analyzing: t('analyzingSilence')
             }
-            return texts[arguments[0]] || ''
+            return texts[props.analysisState] || ''
         }
 
         function formatDisplayTime(rec) {
@@ -151,14 +151,7 @@ export default {
             formatFreq,
             formatDisplayTime,
             formatTime,
-            getAnalysisStateText: function() {
-                const texts = {
-                    downloading: t('downloadingAudio'),
-                    decoding: t('decodingAudio'),
-                    analyzing: t('analyzingSilence')
-                }
-                return texts[this.analysisState] || ''
-            }
+            getAnalysisStateText
         }
     }
 }

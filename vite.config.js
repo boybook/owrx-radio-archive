@@ -2,8 +2,26 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig({
-  plugins: [vue()],
+export default defineConfig(({ command }) => ({
+  plugins: [
+    vue(),
+    // Custom plugin to serve index.html at /files path
+    {
+      name: 'files-route',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          // Serve index.html for root, /files and /files/ paths
+          if (req.url === '/' || req.url === '/files' || req.url === '/files/') {
+            req.url = '/index.html'
+          }
+          next()
+        })
+      }
+    }
+  ],
+  server: {
+    open: '/files'
+  },
   build: {
     lib: {
       entry: resolve(__dirname, 'src/main.js'),
@@ -12,7 +30,9 @@ export default defineConfig({
       formats: ['iife']
     },
     rollupOptions: {
-      external: ['vue'],
+      // Only external vue in build mode (production)
+      // In dev mode, Vite bundles vue normally
+      external: command === 'build' ? ['vue'] : [],
       output: {
         globals: {
           vue: 'Vue'
@@ -29,6 +49,6 @@ export default defineConfig({
     minify: 'esbuild'
   },
   define: {
-    'process.env.NODE_ENV': JSON.stringify('production')
+    'process.env.NODE_ENV': JSON.stringify(command === 'build' ? 'production' : 'development')
   }
-})
+}))

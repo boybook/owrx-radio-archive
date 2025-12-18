@@ -8,18 +8,45 @@ import './styles/main.css'
 import './styles/timeline.css'
 import './styles/player.css'
 
-// Import Vue and App
+// Import App component
 import App from './App.vue'
 
-console.log('[RadioArchive] Script loaded')
-console.log('[RadioArchive] Current pathname:', location.pathname)
+// In dev mode, Vue is bundled by Vite, so we can import directly
+// In production (IIFE build), Vue is external and comes from window.Vue
+// We use dynamic import pattern to handle both cases
+let createAppFn = null
 
-// Only run on /files page
-if (!location.pathname.endsWith('/files') && !location.pathname.endsWith('/files/')) {
-    console.log('[RadioArchive] Not on /files page, exiting')
+// Check if we're in dev mode (Vite injects this)
+const isDev = import.meta.env?.DEV ?? false
+
+if (isDev) {
+    // Development: import Vue directly (Vite bundles it)
+    import('vue').then(Vue => {
+        createAppFn = Vue.createApp
+        console.log('[RadioArchive] Dev mode: Vue imported from bundle')
+        startInit()
+    })
 } else {
-    console.log('[RadioArchive] On /files page, initializing...')
-    init()
+    // Production: wait for global Vue
+    console.log('[RadioArchive] Production mode: waiting for global Vue')
+    startInit()
+}
+
+function startInit() {
+    console.log('[RadioArchive] Script loaded')
+    console.log('[RadioArchive] Current pathname:', location.pathname)
+
+    // Only run on /files page (or root in dev mode)
+    const isFilesPage = location.pathname.endsWith('/files') ||
+                        location.pathname.endsWith('/files/') ||
+                        (isDev && location.hostname === 'localhost' && location.pathname === '/')
+
+    if (!isFilesPage) {
+        console.log('[RadioArchive] Not on /files page, exiting')
+    } else {
+        console.log('[RadioArchive] On /files page, initializing...')
+        init()
+    }
 }
 
 function waitForVue(timeout = 5000) {
@@ -58,11 +85,14 @@ function init() {
 
 async function initApp() {
     try {
-        const Vue = await waitForVue()
-        console.log('[RadioArchive] Vue ready, creating app...')
-        console.log('[RadioArchive] Vue version:', Vue.version)
+        // In production mode, we need to wait for Vue
+        if (!isDev) {
+            const Vue = await waitForVue()
+            createAppFn = Vue.createApp
+            console.log('[RadioArchive] Vue version:', Vue.version)
+        }
 
-        const { createApp } = Vue
+        console.log('[RadioArchive] Initializing app...')
 
         // Find container
         const container = document.querySelector('.container')
@@ -103,7 +133,7 @@ async function initApp() {
 
         // Create and mount Vue app
         console.log('[RadioArchive] Mounting Vue app...')
-        const app = createApp(App)
+        const app = createAppFn(App)
         app.mount('#radio-archive-app')
         console.log('[RadioArchive] Mounted successfully!')
 

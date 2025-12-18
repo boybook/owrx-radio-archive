@@ -90,6 +90,9 @@ export function useRecordings() {
     function parseFilesFromDOM() {
         console.log('[RadioArchive] parseFilesFromDOM called')
 
+        const fileTiles = document.querySelectorAll('.file-tile')
+        console.log('[RadioArchive] Found .file-tile elements:', fileTiles.length)
+
         const fileLinks = document.querySelectorAll('.file-tile a[href^="files/"]')
         console.log('[RadioArchive] Found file links:', fileLinks.length)
 
@@ -97,9 +100,14 @@ export function useRecordings() {
         fileLinks.forEach(link => {
             const href = link.getAttribute('href')
             const filename = href.replace('files/', '')
+            console.log('[RadioArchive] Processing file:', filename)
+
             const parsed = parseFilename(filename)
             if (parsed) {
+                console.log('[RadioArchive] Parsed:', parsed)
                 files.push(parsed)
+            } else {
+                console.log('[RadioArchive] Could not parse:', filename)
             }
         })
 
@@ -113,6 +121,9 @@ export function useRecordings() {
         if (availableFreqs.value.length > 0) {
             selectedFreq.value = availableFreqs.value[0]
         }
+
+        console.log('[RadioArchive] Selected date:', selectedDate.value)
+        console.log('[RadioArchive] Selected freq:', selectedFreq.value)
     }
 
     async function loadCachedAnalysis() {
