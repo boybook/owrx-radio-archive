@@ -38,12 +38,21 @@ export function usePlayer(recordingsState) {
     function play(recording, index, startPosition = 0) {
         initAudio()
 
-        // If clicking on same track, toggle play/pause
-        if (currentTrack.value?.filename === recording.filename && startPosition === 0) {
-            if (isPlaying.value) {
-                audio.value.pause()
+        // If same track, just seek (don't reload)
+        if (currentTrack.value?.filename === recording.filename) {
+            if (startPosition === 0) {
+                // Toggle play/pause
+                if (isPlaying.value) {
+                    audio.value.pause()
+                } else {
+                    audio.value.play()
+                }
             } else {
-                audio.value.play()
+                // Seek to position
+                audio.value.currentTime = startPosition
+                if (!isPlaying.value) {
+                    audio.value.play()
+                }
             }
             return
         }

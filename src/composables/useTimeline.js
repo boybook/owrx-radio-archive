@@ -4,7 +4,7 @@
 import { ref, computed } from 'vue'
 
 const SECONDS_PER_DAY = 86400
-const MAX_ZOOM = 48
+const MAX_ZOOM = 1440  // 最大缩放到1分钟视图
 
 export function useTimeline() {
     // State
@@ -45,8 +45,18 @@ export function useTimeline() {
             interval = 1800   // 30 minutes
         } else if (duration > 5400) {
             interval = 900    // 15 minutes
-        } else {
+        } else if (duration > 1800) {
             interval = 300    // 5 minutes
+        } else if (duration > 600) {
+            interval = 120    // 2 minutes
+        } else if (duration > 300) {
+            interval = 60     // 1 minute
+        } else if (duration > 120) {
+            interval = 30     // 30 seconds
+        } else if (duration > 60) {
+            interval = 15     // 15 seconds
+        } else {
+            interval = 10     // 10 seconds
         }
 
         const ticks = []
@@ -59,8 +69,11 @@ export function useTimeline() {
             let label
             if (interval >= 3600) {
                 label = String(hours).padStart(2, '0')
-            } else {
+            } else if (interval >= 60) {
                 label = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+            } else {
+                const seconds = tick % 60
+                label = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
             }
 
             const position = ((tick - startTime) / duration) * 100
@@ -72,13 +85,15 @@ export function useTimeline() {
     })
 
     const visibleDurationLabel = computed(() => {
-        const seconds = visibleDuration.value
-        if (seconds >= 3600) {
-            const hours = Math.round(seconds / 3600)
+        const totalSeconds = visibleDuration.value
+        if (totalSeconds >= 3600) {
+            const hours = Math.round(totalSeconds / 3600)
             return `${hours}h`
-        } else {
-            const minutes = Math.round(seconds / 60)
+        } else if (totalSeconds >= 60) {
+            const minutes = Math.round(totalSeconds / 60)
             return `${minutes}m`
+        } else {
+            return `${Math.round(totalSeconds)}s`
         }
     })
 
@@ -117,18 +132,21 @@ export function useTimeline() {
         const rect = e.currentTarget.getBoundingClientRect()
 
         if (e.ctrlKey) {
+            // Ctrl+滚轮缩放（降低灵敏度）
             const positionRatio = (e.clientX - rect.left) / rect.width
-            const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05
+            const zoomFactor = e.deltaY > 0 ? 0.975 : 1.025
             zoomAtPosition(zoomLevel.value * zoomFactor, positionRatio)
             return
         }
 
         if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-            const deltaTime = (e.deltaX / rect.width) * visibleDuration.value * 2
+            // 横向滚动平移时间轴
+            const deltaTime = (e.deltaX / rect.width) * visibleDuration.value
             viewStartTime.value = clampViewStart(viewStartTime.value + deltaTime)
         } else {
+            // 纵向滚动缩放（降低灵敏度）
             const positionRatio = (e.clientX - rect.left) / rect.width
-            const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05
+            const zoomFactor = e.deltaY > 0 ? 0.975 : 1.025
             zoomAtPosition(zoomLevel.value * zoomFactor, positionRatio)
         }
     }
