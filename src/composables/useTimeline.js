@@ -250,11 +250,16 @@ export function useTimeline() {
         }
     }
 
-    // Playhead style calculation
+    // Playhead style calculation (original - for backwards compatibility)
     function getPlayheadStyle(currentTrack, currentTime) {
         if (!currentTrack) return { display: 'none' }
 
         const playheadTime = currentTrack.timeOfDay + currentTime
+        return getPlayheadStyleByTime(playheadTime)
+    }
+
+    // Playhead style by absolute timeline time
+    function getPlayheadStyleByTime(playheadTime) {
         const startTime = viewStartTime.value
         const endTime = viewEndTime.value
 
@@ -289,7 +294,8 @@ export function useTimeline() {
         handleTouchMove,
         handleTouchEnd,
         getSubSegmentStyle,
-        getPlayheadStyle
+        getPlayheadStyle,
+        getPlayheadStyleByTime
     }
 }
 

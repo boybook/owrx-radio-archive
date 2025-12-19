@@ -18,12 +18,7 @@ const messages = {
         noRecordings: 'No audio recordings found.',
         fileNamingHint: 'Audio files should be named: REC-YYMMDD-HHMMSS-FREQ.mp3',
         loading: 'Loading...',
-        downloadingAudio: 'Downloading...',
-        decodingAudio: 'Decoding...',
-        analyzingSilence: 'Analyzing...',
-        skipSilence: 'Skip silence',
-        activeSegments: 'segments',
-        refresh: 'Refresh'
+        activeSegments: 'segments'
     },
     zh: {
         receivedFiles: '已接收文件',
@@ -40,12 +35,7 @@ const messages = {
         noRecordings: '未找到录音文件',
         fileNamingHint: '音频文件命名格式：REC-YYMMDD-HHMMSS-FREQ.mp3',
         loading: '加载中...',
-        downloadingAudio: '下载中...',
-        decodingAudio: '解码中...',
-        analyzingSilence: '分析中...',
-        skipSilence: '跳过静噪',
-        activeSegments: '个片段',
-        refresh: '刷新'
+        activeSegments: '个片段'
     },
     ja: {
         receivedFiles: '受信ファイル',
@@ -62,12 +52,7 @@ const messages = {
         noRecordings: '録音ファイルが見つかりません',
         fileNamingHint: 'ファイル名形式：REC-YYMMDD-HHMMSS-FREQ.mp3',
         loading: '読み込み中...',
-        downloadingAudio: 'ダウンロード中...',
-        decodingAudio: 'デコード中...',
-        analyzingSilence: '分析中...',
-        skipSilence: '無音スキップ',
-        activeSegments: 'セグメント',
-        refresh: '更新'
+        activeSegments: 'セグメント'
     }
 }
 

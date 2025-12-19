@@ -1,24 +1,13 @@
 <template>
     <div class="radio-archive-section">
         <div class="player-container">
-            <!-- Analysis status -->
-            <div class="player-analysis" v-if="analysisState !== 'idle' && analysisState !== 'ready'">
-                <div class="analysis-info">
-                    <span class="analysis-spinner-small"></span>
-                    <span class="analysis-text">{{ getAnalysisStateText() }}</span>
-                </div>
-            </div>
-
-            <!-- Normal playback info -->
-            <div class="player-now-playing" v-else>
+            <!-- Playback info -->
+            <div class="player-now-playing">
                 <span class="player-track-name">
                     {{ currentTrack ? formatDisplayTime(currentTrack) + ' - ' + formatFreq(currentTrack.frequency) : t('noTrackSelected') }}
                 </span>
                 <span class="player-time">
                     {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-                    <template v-if="currentAnalysis">
-                        ({{ currentAnalysis.activeSegments.length }} {{ t('activeSegments') }})
-                    </template>
                 </span>
             </div>
 
@@ -65,10 +54,6 @@
                         <input type="checkbox" :checked="continuousPlay" @change="$emit('update:continuousPlay', $event.target.checked)">
                         <span>{{ t('auto') }}</span>
                     </label>
-                    <label class="skip-silence">
-                        <input type="checkbox" :checked="skipSilence" @change="$emit('update:skipSilence', $event.target.checked)">
-                        <span>{{ t('skipSilence') }}</span>
-                    </label>
                 </div>
             </div>
         </div>
@@ -110,34 +95,13 @@ export default {
             type: Boolean,
             default: true
         },
-        skipSilence: {
-            type: Boolean,
-            default: true
-        },
         progressPercent: {
             type: Number,
             default: 0
-        },
-        analysisState: {
-            type: String,
-            default: 'idle'
-        },
-        currentAnalysis: {
-            type: Object,
-            default: null
         }
     },
-    emits: ['toggle', 'prev', 'next', 'seek', 'volume', 'speed', 'update:continuousPlay', 'update:skipSilence'],
-    setup(props) {
-        function getAnalysisStateText() {
-            const texts = {
-                downloading: t('downloadingAudio'),
-                decoding: t('decodingAudio'),
-                analyzing: t('analyzingSilence')
-            }
-            return texts[props.analysisState] || ''
-        }
-
+    emits: ['toggle', 'prev', 'next', 'seek', 'volume', 'speed', 'update:continuousPlay'],
+    setup() {
         function formatDisplayTime(rec) {
             return formatTimeUtil(rec.date)
         }
@@ -150,8 +114,7 @@ export default {
             t,
             formatFreq,
             formatDisplayTime,
-            formatTime,
-            getAnalysisStateText
+            formatTime
         }
     }
 }

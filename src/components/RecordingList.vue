@@ -13,15 +13,7 @@
                     @click="$emit('play', rec, idx)">
                     <span class="rec-icon">{{ isCurrentlyPlaying(rec) ? '&#9654;' : '&#9679;' }}</span>
                     <span class="rec-time">{{ formatDisplayTime(rec) }}</span>
-                    <span class="rec-filename-group">
-                        <span class="rec-filename">{{ rec.filename }}</span>
-                        <button
-                            class="rec-refresh-btn"
-                            @click.stop="$emit('refresh', rec)"
-                            :title="t('refresh')">
-                            &#8635;
-                        </button>
-                    </span>
+                    <span class="rec-filename">{{ rec.filename }}</span>
                     <span class="rec-duration">{{ rec.audioDuration ? formatTime(rec.audioDuration) : '--:--' }}</span>
                 </li>
             </ul>
@@ -45,7 +37,7 @@ export default {
             required: true
         }
     },
-    emits: ['play', 'refresh'],
+    emits: ['play'],
     setup() {
         function formatDisplayTime(rec) {
             return formatTimeUtil(rec.date)

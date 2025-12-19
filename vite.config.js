@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js'
 import { resolve } from 'path'
 
 export default defineConfig(({ command }) => ({
   plugins: [
     vue(),
+    cssInjectedByJsPlugin(),
     // Custom plugin to serve index.html at /files path
     {
       name: 'files-route',

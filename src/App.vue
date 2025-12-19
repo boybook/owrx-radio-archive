@@ -74,10 +74,7 @@
                     :volume="volume"
                     :playbackRate="playbackRate"
                     :continuousPlay="continuousPlay"
-                    :skipSilence="skipSilence"
                     :progressPercent="getProgressPercent()"
-                    :analysisState="analysisState"
-                    :currentAnalysis="currentAnalysis"
                     @toggle="togglePlay"
                     @prev="playPrev"
                     @next="playNext"
@@ -85,7 +82,6 @@
                     @volume="setVolume"
                     @speed="setSpeed"
                     @update:continuousPlay="continuousPlay = $event"
-                    @update:skipSilence="skipSilence = $event"
                 />
 
                 <!-- Recording List -->
@@ -93,7 +89,6 @@
                     :recordings="filteredRecordings"
                     :isCurrentlyPlaying="isCurrentlyPlaying"
                     @play="play"
-                    @refresh="refreshRecording"
                 />
             </div>
 
@@ -109,6 +104,7 @@
 <script>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { t, initI18n } from './modules/i18n.js'
+import { audioTimeToTimelineTime } from './modules/fileParser.js'
 import { useRecordings } from './composables/useRecordings.js'
 import { usePlayer } from './composables/usePlayer.js'
 import { useTimeline } from './composables/useTimeline.js'
@@ -141,18 +137,13 @@ export default {
             recordings,
             selectedDate,
             selectedFreq,
-            analysisCache,
-            analysisState,
-            analysisProgress,
             availableDates,
             availableFreqs,
             freqStats,
             filteredRecordings,
             timelineRecordings,
+            analysisCache,
             parseFilesFromDOM,
-            loadCachedAnalysis,
-            analyzeRecording,
-            refreshRecording,
             selectDate,
             selectFreq,
             prevDate,
@@ -160,24 +151,20 @@ export default {
             canPrevDate,
             canNextDate,
             getRecordingBaseSegment,
-            isRecordingAnalyzed,
             getRecordingActiveSegments,
-            SECONDS_PER_DAY
+            loadAllTimestamps
         } = recordingsState
 
         // Player state
         const playerState = usePlayer(recordingsState)
         const {
             currentTrack,
-            currentIndex,
             isPlaying,
             currentTime,
             duration,
             volume,
             playbackRate,
             continuousPlay,
-            skipSilence,
-            currentAnalysis,
             play,
             playAtPosition,
             togglePlay,
@@ -186,10 +173,8 @@ export default {
             seek,
             setVolume,
             setSpeed,
-            formatTime,
             getProgressPercent,
             isCurrentlyPlaying,
-            stopPlayback,
             checkCurrentTrackFilters
         } = playerState
 
@@ -213,8 +198,25 @@ export default {
             handleTouchMove,
             handleTouchEnd,
             getSubSegmentStyle,
-            getPlayheadStyle
+            getPlayheadStyleByTime
         } = timelineState
+
+        // Wrapped getPlayheadStyle with timestamp mapping
+        function getPlayheadStyle(currentTrack, currentTime) {
+            if (!currentTrack) return { display: 'none' }
+
+            const analysis = analysisCache.get(currentTrack.filename)
+            let playheadTime
+
+            if (analysis?.activeSegments?.length) {
+                const mapped = audioTimeToTimelineTime(currentTime, analysis.activeSegments)
+                playheadTime = mapped ?? (currentTrack.timeOfDay + currentTime)
+            } else {
+                playheadTime = currentTrack.timeOfDay + currentTime
+            }
+
+            return getPlayheadStyleByTime(playheadTime)
+        }
 
         // Methods
         function switchView(view) {
@@ -270,7 +272,7 @@ export default {
         onMounted(() => {
             nextTick(async () => {
                 parseFilesFromDOM()
-                await loadCachedAnalysis()
+                await loadAllTimestamps()
             })
 
             document.addEventListener('keydown', handleKeydown)
@@ -295,9 +297,6 @@ export default {
             freqStats,
             filteredRecordings,
             timelineRecordings,
-            analysisState,
-            analysisProgress,
-            analysisCache,
             handleDateSelect,
             handleFreqSelect,
             prevDate,
@@ -305,9 +304,7 @@ export default {
             canPrevDate,
             canNextDate,
             getRecordingBaseSegment,
-            isRecordingAnalyzed,
             getRecordingActiveSegments,
-            refreshRecording,
             // Player
             currentTrack,
             currentTime,
@@ -316,8 +313,6 @@ export default {
             volume,
             playbackRate,
             continuousPlay,
-            skipSilence,
-            currentAnalysis,
             play,
             playAtPosition,
             togglePlay,
@@ -326,7 +321,6 @@ export default {
             seek,
             setVolume,
             setSpeed,
-            formatTime,
             getProgressPercent,
             isCurrentlyPlaying,
             // Timeline

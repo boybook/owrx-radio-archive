@@ -1,16 +1,13 @@
 /**
  * usePlayer - Audio player state and logic composable
  */
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { formatDuration } from '../modules/fileParser.js'
-import { SilenceAnalyzer } from '../modules/silenceAnalyzer.js'
 
 export function usePlayer(recordingsState) {
     const {
         recordings,
         filteredRecordings,
-        analysisCache,
-        analyzeRecording,
         SECONDS_PER_DAY
     } = recordingsState
 
@@ -24,13 +21,6 @@ export function usePlayer(recordingsState) {
     const volume = ref(1)
     const playbackRate = ref(1)
     const continuousPlay = ref(true)
-    const skipSilence = ref(true)
-
-    // Computed
-    const currentAnalysis = computed(() => {
-        if (!currentTrack.value) return null
-        return analysisCache.get(currentTrack.value.filename) || null
-    })
 
     // Methods
     function initAudio() {
@@ -45,7 +35,7 @@ export function usePlayer(recordingsState) {
         }
     }
 
-    async function play(recording, index, startPosition = 0) {
+    function play(recording, index, startPosition = 0) {
         initAudio()
 
         // If clicking on same track, toggle play/pause
@@ -58,48 +48,23 @@ export function usePlayer(recordingsState) {
             return
         }
 
-        // Check if analysis is needed
-        const isRecent = SilenceAnalyzer.isRecordingRecent(
-            recording.filename,
-            2 * 60 * 60 * 1000,
-            recordings.value
-        )
-        const needsAnalysis = !analysisCache.has(recording.filename) || isRecent
-
-        if (needsAnalysis) {
-            await analyzeRecording(recording)
-        }
-
         currentTrack.value = recording
         currentIndex.value = index !== undefined ? index : filteredRecordings.value.indexOf(recording)
 
-        // Use analysis duration or preloaded duration
-        const analysis = analysisCache.get(recording.filename)
-        if (analysis && analysis.duration) {
-            duration.value = analysis.duration
-        } else if (recording.audioDuration && isFinite(recording.audioDuration)) {
+        // Use preloaded duration from DOM
+        if (recording.audioDuration && isFinite(recording.audioDuration)) {
             duration.value = recording.audioDuration
         } else {
             duration.value = 0
-        }
-
-        // Skip initial silence if enabled
-        let effectiveStartPosition = startPosition
-        if (skipSilence.value && startPosition === 0 && analysis && analysis.activeSegments && analysis.activeSegments.length > 0) {
-            const firstActive = analysis.activeSegments[0]
-            if (firstActive.start > 0.5) {
-                effectiveStartPosition = firstActive.start
-                console.log('[RadioArchive] Skipping initial silence, jumping to', effectiveStartPosition)
-            }
         }
 
         audio.value.src = recording.href
         audio.value.volume = volume.value
         audio.value.playbackRate = playbackRate.value
 
-        if (effectiveStartPosition > 0) {
+        if (startPosition > 0) {
             audio.value.addEventListener('loadedmetadata', function seekOnce() {
-                audio.value.currentTime = effectiveStartPosition
+                audio.value.currentTime = startPosition
                 audio.value.removeEventListener('loadedmetadata', seekOnce)
             })
         }
@@ -192,28 +157,6 @@ export function usePlayer(recordingsState) {
 
     function onTimeUpdate() {
         currentTime.value = audio.value.currentTime
-
-        if (!skipSilence.value) return
-
-        const analysis = currentAnalysis.value
-        if (!analysis) return
-        if (!analysis.activeSegments || analysis.activeSegments.length === 0) return
-
-        const currentSeg = analysis.segments.find(
-            s => currentTime.value >= s.start && currentTime.value < s.end
-        )
-
-        if (currentSeg && currentSeg.isSilence) {
-            const nextActive = analysis.activeSegments.find(s => s.start > currentTime.value)
-            if (nextActive) {
-                console.log('[RadioArchive] Skipping silence, jumping to', nextActive.start)
-                audio.value.currentTime = nextActive.start
-            } else {
-                console.log('[RadioArchive] No more active segments, triggering end')
-                audio.value.pause()
-                onEnded()
-            }
-        }
     }
 
     function onLoadedMetadata() {
@@ -286,8 +229,7 @@ export function usePlayer(recordingsState) {
 
             let matchesCrossDay = false
             if (trackDate !== newDate) {
-                const analysis = analysisCache.get(currentTrack.value.filename)
-                const dur = analysis?.duration || currentTrack.value.audioDuration || 0
+                const dur = currentTrack.value.audioDuration || 0
                 if (currentTrack.value.timeOfDay + dur > SECONDS_PER_DAY) {
                     const nextDate = new Date(currentTrack.value.date)
                     nextDate.setDate(nextDate.getDate() + 1)
@@ -320,9 +262,6 @@ export function usePlayer(recordingsState) {
         volume,
         playbackRate,
         continuousPlay,
-        skipSilence,
-        // Computed
-        currentAnalysis,
         // Methods
         initAudio,
         play,

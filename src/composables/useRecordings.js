@@ -2,17 +2,21 @@
  * useRecordings - Recording data management composable
  */
 import { ref, reactive, computed } from 'vue'
-import { parseFilename } from '../modules/fileParser.js'
-import { SilenceAnalyzer } from '../modules/silenceAnalyzer.js'
+import {
+    parseFilename,
+    parseDurationString,
+    calculateDurationFromSize,
+    parseJsonlContent,
+    chunksToActiveSegments
+} from '../modules/fileParser.js'
 
 export function useRecordings() {
     // State
     const recordings = ref([])
     const selectedDate = ref(null)
     const selectedFreq = ref(null)
+    // analysisCache preserved for future timestamp mapping feature
     const analysisCache = reactive(new Map())
-    const analysisState = ref('idle')  // 'idle' | 'downloading' | 'decoding' | 'analyzing' | 'ready'
-    const analysisProgress = ref(0)
 
     // Constants
     const SECONDS_PER_DAY = 86400
@@ -64,10 +68,7 @@ export function useRecordings() {
                 if (r.dateKey !== prevDateKey) return false
                 if (selectedFreq.value && r.frequency !== selectedFreq.value) return false
 
-                const analysis = analysisCache.get(r.filename)
-                const duration = analysis?.duration
-                    || (r.audioDuration && isFinite(r.audioDuration) ? r.audioDuration : 0)
-
+                const duration = r.audioDuration && isFinite(r.audioDuration) ? r.audioDuration : 0
                 if (duration <= 0) return false
                 return r.timeOfDay + duration > SECONDS_PER_DAY
             })
@@ -100,10 +101,38 @@ export function useRecordings() {
         fileLinks.forEach(link => {
             const href = link.getAttribute('href')
             const filename = href.replace('files/', '')
+
+            // Only process mp3 files
+            if (!filename.toLowerCase().endsWith('.mp3')) {
+                return
+            }
+
             console.log('[RadioArchive] Processing file:', filename)
 
             const parsed = parseFilename(filename)
             if (parsed) {
+                // Try to get duration from DOM
+                const durationEl = link.querySelector('.file-duration')
+                if (durationEl) {
+                    const duration = parseDurationString(durationEl.textContent)
+                    if (duration !== null) {
+                        parsed.audioDuration = duration
+                        console.log('[RadioArchive] Duration from DOM:', duration)
+                    }
+                }
+
+                // If no duration, try to calculate from file size
+                if (parsed.audioDuration === null) {
+                    const sizeEl = link.querySelector('.file-size')
+                    if (sizeEl) {
+                        const duration = calculateDurationFromSize(sizeEl.textContent)
+                        if (duration !== null) {
+                            parsed.audioDuration = duration
+                            console.log('[RadioArchive] Duration from size:', duration)
+                        }
+                    }
+                }
+
                 console.log('[RadioArchive] Parsed:', parsed)
                 files.push(parsed)
             } else {
@@ -124,86 +153,6 @@ export function useRecordings() {
 
         console.log('[RadioArchive] Selected date:', selectedDate.value)
         console.log('[RadioArchive] Selected freq:', selectedFreq.value)
-    }
-
-    async function loadCachedAnalysis() {
-        console.log('[RadioArchive] Loading cached analysis data...')
-        let loadedCount = 0
-
-        for (let i = 0; i < recordings.value.length; i++) {
-            const rec = recordings.value[i]
-            const cached = await SilenceAnalyzer.getFromCache(rec.filename)
-
-            if (cached && cached.segments) {
-                analysisCache.set(rec.filename, cached)
-                if (cached.duration && isFinite(cached.duration)) {
-                    recordings.value[i] = {
-                        ...recordings.value[i],
-                        audioDuration: cached.duration
-                    }
-                }
-                loadedCount++
-            }
-        }
-
-        console.log('[RadioArchive] Loaded cached analysis for', loadedCount, 'recordings')
-    }
-
-    async function analyzeRecording(recording) {
-        const isRecent = SilenceAnalyzer.isRecordingRecent(
-            recording.filename,
-            2 * 60 * 60 * 1000,
-            recordings.value
-        )
-
-        if (!isRecent && analysisCache.has(recording.filename)) {
-            return analysisCache.get(recording.filename)
-        }
-
-        analysisState.value = 'downloading'
-        analysisProgress.value = 0
-
-        try {
-            const result = await SilenceAnalyzer.analyze(
-                recording.href,
-                recording.filename,
-                {
-                    silenceThreshold: 0.01,
-                    minSilenceDuration: 2,
-                    allRecordings: recordings.value,
-                    onProgress: ({ stage, progress }) => {
-                        analysisState.value = stage
-                        analysisProgress.value = Math.round(progress * 100)
-                    }
-                }
-            )
-
-            analysisCache.set(recording.filename, result)
-
-            if (result && result.duration) {
-                const index = recordings.value.findIndex(r => r.filename === recording.filename)
-                if (index !== -1) {
-                    recordings.value[index] = {
-                        ...recordings.value[index],
-                        audioDuration: result.duration
-                    }
-                }
-            }
-
-            analysisState.value = 'ready'
-            return result
-        } catch (e) {
-            console.error('[RadioArchive] Analysis failed:', e)
-            analysisState.value = 'idle'
-            return null
-        }
-    }
-
-    async function refreshRecording(recording) {
-        console.log('[RadioArchive] Force refreshing:', recording.filename)
-        analysisCache.delete(recording.filename)
-        await SilenceAnalyzer.deleteFromCache(recording.filename)
-        await analyzeRecording(recording)
     }
 
     function selectDate(dateKey) {
@@ -239,9 +188,22 @@ export function useRecordings() {
 
     function getRecordingBaseSegment(rec) {
         const analysis = analysisCache.get(rec.filename)
-        const actualDuration = analysis?.duration
-            || (rec.audioDuration && isFinite(rec.audioDuration) ? rec.audioDuration : 60)
 
+        // If JSONL data available, use real time range
+        if (analysis?.realTimeRange) {
+            const { start, end } = analysis.realTimeRange
+            const lastSeg = analysis.activeSegments[analysis.activeSegments.length - 1]
+            return {
+                start,
+                end,
+                audioStart: 0,
+                audioEnd: lastSeg?.audioEnd ?? 0,
+                recording: rec
+            }
+        }
+
+        // Fallback: use audio duration
+        const actualDuration = rec.audioDuration && isFinite(rec.audioDuration) ? rec.audioDuration : 60
         return {
             start: rec.timeOfDay,
             end: rec.timeOfDay + actualDuration,
@@ -251,6 +213,7 @@ export function useRecordings() {
         }
     }
 
+    // Preserved for future timestamp mapping feature
     function isRecordingAnalyzed(rec) {
         const analysis = analysisCache.get(rec.filename)
         return analysis && analysis.activeSegments && analysis.activeSegments.length > 0
@@ -264,12 +227,35 @@ export function useRecordings() {
         }
 
         return analysis.activeSegments.map(seg => ({
-            start: rec.timeOfDay + seg.start,
-            end: rec.timeOfDay + seg.end,
-            audioStart: seg.start,
-            audioEnd: seg.end,
+            start: seg.start,
+            end: seg.end,
+            audioStart: seg.audioStart,
+            audioEnd: seg.audioEnd,
             recording: rec
         }))
+    }
+
+    // Load JSONL timestamp data for a recording
+    async function loadTimestampData(rec) {
+        const jsonlUrl = rec.href.replace('.mp3', '.jsonl')
+        try {
+            const resp = await fetch(jsonlUrl)
+            if (!resp.ok) return
+            const content = await resp.text()
+            const chunks = parseJsonlContent(content)
+            const { segments, realTimeRange } = chunksToActiveSegments(chunks)
+            analysisCache.set(rec.filename, {
+                activeSegments: segments,
+                realTimeRange
+            })
+        } catch (e) {
+            // Silent fail - will use fallback rendering
+        }
+    }
+
+    // Load all timestamp data for current recordings
+    async function loadAllTimestamps() {
+        await Promise.all(recordings.value.map(loadTimestampData))
     }
 
     return {
@@ -277,9 +263,7 @@ export function useRecordings() {
         recordings,
         selectedDate,
         selectedFreq,
-        analysisCache,
-        analysisState,
-        analysisProgress,
+        analysisCache,  // Preserved for future timestamp mapping feature
         // Constants
         SECONDS_PER_DAY,
         // Computed
@@ -291,9 +275,6 @@ export function useRecordings() {
         timelineRecordings,
         // Methods
         parseFilesFromDOM,
-        loadCachedAnalysis,
-        analyzeRecording,
-        refreshRecording,
         selectDate,
         selectFreq,
         prevDate,
@@ -302,7 +283,8 @@ export function useRecordings() {
         canNextDate,
         getRecordingBaseSegment,
         isRecordingAnalyzed,
-        getRecordingActiveSegments
+        getRecordingActiveSegments,
+        loadAllTimestamps
     }
 }
 
