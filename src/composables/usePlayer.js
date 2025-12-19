@@ -58,7 +58,14 @@ export function usePlayer(recordingsState) {
             duration.value = 0
         }
 
-        audio.value.src = recording.href
+// Check if this is the latest recording for its frequency (actively being written)
+        const sameFreqRecordings = recordings.value.filter(r => r.frequency === recording.frequency)
+        const latestForFreq = sameFreqRecordings.reduce((latest, r) =>
+            !latest || r.date > latest.date ? r : latest, null)
+        const isLatest = latestForFreq?.filename === recording.filename
+
+        // Add cache buster for latest recording (server may still be writing to it)
+        audio.value.src = isLatest ? `${recording.href}?t=${Date.now()}` : recording.href
         audio.value.volume = volume.value
         audio.value.playbackRate = playbackRate.value
 

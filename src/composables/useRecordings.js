@@ -235,11 +235,21 @@ export function useRecordings() {
         }))
     }
 
+    // Check if recording is the latest for its frequency
+    function isLatestForFrequency(rec) {
+        const sameFreqRecordings = recordings.value.filter(r => r.frequency === rec.frequency)
+        const latestForFreq = sameFreqRecordings.reduce((latest, r) =>
+            !latest || r.date > latest.date ? r : latest, null)
+        return latestForFreq?.filename === rec.filename
+    }
+
     // Load JSONL timestamp data for a recording
     async function loadTimestampData(rec) {
         const jsonlUrl = rec.href.replace('.mp3', '.jsonl')
         try {
-            const resp = await fetch(jsonlUrl, { cache: 'no-store' })
+            // Disable cache for latest recording (server may still be writing to it)
+            const fetchOptions = isLatestForFrequency(rec) ? { cache: 'no-store' } : {}
+            const resp = await fetch(jsonlUrl, fetchOptions)
             if (!resp.ok) return
             const content = await resp.text()
             const chunks = parseJsonlContent(content)
