@@ -239,7 +239,7 @@ export function useRecordings() {
     async function loadTimestampData(rec) {
         const jsonlUrl = rec.href.replace('.mp3', '.jsonl')
         try {
-            const resp = await fetch(jsonlUrl)
+            const resp = await fetch(jsonlUrl, { cache: 'no-store' })
             if (!resp.ok) return
             const content = await resp.text()
             const chunks = parseJsonlContent(content)
