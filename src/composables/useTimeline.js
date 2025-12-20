@@ -6,6 +6,8 @@ import { ref, computed } from 'vue'
 const SECONDS_PER_DAY = 86400
 const MAX_ZOOM = 1440  // 最大缩放到1分钟视图
 const AUTO_FOLLOW_DELAY = 10000  // 10秒无操作后自动跟随
+const TAP_THRESHOLD = 10      // 像素：超过此距离视为拖拽而非 tap
+const TAP_MAX_DURATION = 300  // 毫秒：超过此时间视为长按而非 tap
 
 export function useTimeline() {
     // State
@@ -23,6 +25,12 @@ export function useTimeline() {
     let touchStartX = 0
     let touchStartViewTime = 0
     let isTouchZooming = false
+
+    // Tap detection state
+    let tapStartTime = 0
+    let tapStartX = 0
+    let tapStartY = 0
+    let isTapCandidate = false
 
     // Computed
     const viewEndTime = computed(() => {
@@ -189,6 +197,8 @@ export function useTimeline() {
     }
 
     function handlePointerDown(e) {
+        // 触屏设备跳过 Pointer Events，让 Touch Events 处理
+        if (e.pointerType === 'touch') return
         if (e.pointerType === 'mouse' && e.button !== 0) return
         if (e.target.closest('.timeline-segment')) return
 
@@ -200,6 +210,7 @@ export function useTimeline() {
     }
 
     function handlePointerMove(e) {
+        if (e.pointerType === 'touch') return
         if (!isDragging.value) return
 
         const rect = e.currentTarget.getBoundingClientRect()
@@ -210,6 +221,7 @@ export function useTimeline() {
     }
 
     function handlePointerUp(e) {
+        if (e.pointerType === 'touch') return
         if (isDragging.value) {
             isDragging.value = false
             if (e.currentTarget && e.pointerId !== undefined) {
@@ -234,22 +246,37 @@ export function useTimeline() {
     }
 
     function handleTouchStart(e) {
-        if (e.target.closest('.timeline-segment')) return
-
         recordInteraction()
+
         if (e.touches.length === 2) {
             isTouchZooming = true
+            isTapCandidate = false
             touchStartDistance = getTouchDistance(e.touches)
             touchStartZoom = zoomLevel.value
         } else if (e.touches.length === 1) {
             isTouchZooming = false
             touchStartX = e.touches[0].clientX
             touchStartViewTime = viewStartTime.value
+
+            // 记录 tap 候选信息
+            isTapCandidate = true
+            tapStartTime = Date.now()
+            tapStartX = e.touches[0].clientX
+            tapStartY = e.touches[0].clientY
         }
     }
 
     function handleTouchMove(e) {
         const rect = e.currentTarget.getBoundingClientRect()
+
+        // 检查是否超过 tap 阈值
+        if (isTapCandidate && e.touches.length === 1) {
+            const dx = e.touches[0].clientX - tapStartX
+            const dy = e.touches[0].clientY - tapStartY
+            if (Math.sqrt(dx * dx + dy * dy) > TAP_THRESHOLD) {
+                isTapCandidate = false
+            }
+        }
 
         if (e.touches.length === 2 && isTouchZooming) {
             const currentDistance = getTouchDistance(e.touches)
@@ -268,6 +295,25 @@ export function useTimeline() {
     }
 
     function handleTouchEnd(e) {
+        // 检测有效 tap
+        if (isTapCandidate && e.changedTouches.length === 1) {
+            const touch = e.changedTouches[0]
+            const elapsed = Date.now() - tapStartTime
+            const dx = touch.clientX - tapStartX
+            const dy = touch.clientY - tapStartY
+            const distance = Math.sqrt(dx * dx + dy * dy)
+
+            if (elapsed < TAP_MAX_DURATION && distance < TAP_THRESHOLD) {
+                // 有效 tap，查找点击的段落元素并触发 click
+                const target = document.elementFromPoint(touch.clientX, touch.clientY)
+                const segment = target?.closest('.timeline-segment')
+                if (segment) {
+                    segment.click()
+                }
+            }
+        }
+        isTapCandidate = false
+
         if (e.touches.length === 0) {
             isTouchZooming = false
         } else if (e.touches.length === 1) {

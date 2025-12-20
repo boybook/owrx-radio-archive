@@ -3,6 +3,7 @@
  */
 import { ref } from 'vue'
 import { formatDuration } from '../modules/fileParser.js'
+import { getPlayableUrl, onLoadingChange, revokeAllBlobUrls } from '../modules/audioSourceManager.js'
 
 export function usePlayer(recordingsState) {
     const {
@@ -17,12 +18,18 @@ export function usePlayer(recordingsState) {
     const currentTrack = ref(null)
     const currentIndex = ref(-1)
     const isPlaying = ref(false)
+    const isLoading = ref(false)  // 音频加载状态（用于 Blob 模式下载）
     const currentTime = ref(0)
     const duration = ref(0)
     const volume = ref(1)
     const playbackRate = ref(1)
     const continuousPlay = ref(true)
     const skipShortSegments = ref(true)  // Skip short segments by default
+
+    // 注册加载状态回调
+    onLoadingChange((loading) => {
+        isLoading.value = loading
+    })
 
     // Methods
     function initAudio() {
@@ -37,7 +44,7 @@ export function usePlayer(recordingsState) {
         }
     }
 
-    function play(recording, index, startPosition = 0) {
+    async function play(recording, index, startPosition = 0) {
         initAudio()
 
         // If same track, just seek (don't reload)
@@ -69,14 +76,16 @@ export function usePlayer(recordingsState) {
             duration.value = 0
         }
 
-// Check if this is the latest recording for its frequency (actively being written)
+        // Check if this is the latest recording for its frequency (actively being written)
         const sameFreqRecordings = recordings.value.filter(r => r.frequency === recording.frequency)
         const latestForFreq = sameFreqRecordings.reduce((latest, r) =>
             !latest || r.date > latest.date ? r : latest, null)
         const isLatest = latestForFreq?.filename === recording.filename
 
-        // Add cache buster for latest recording (server may still be writing to it)
-        audio.value.src = isLatest ? `${recording.href}?t=${Date.now()}` : recording.href
+        // 通过 audioSourceManager 获取可播放的 URL
+        // Chrome/Firefox 直接返回原 URL，其他浏览器返回 Blob URL
+        const audioSrc = await getPlayableUrl(recording.href, { bustCache: isLatest })
+        audio.value.src = audioSrc
         audio.value.volume = volume.value
         audio.value.playbackRate = playbackRate.value
 
@@ -143,7 +152,10 @@ export function usePlayer(recordingsState) {
             nextIdx++
         }
 
-        // No more valid recordings
+        // No more valid recordings, stop playback
+        if (audio.value) {
+            audio.value.pause()
+        }
         isPlaying.value = false
     }
 
@@ -336,6 +348,7 @@ export function usePlayer(recordingsState) {
         currentTrack,
         currentIndex,
         isPlaying,
+        isLoading,
         currentTime,
         duration,
         volume,

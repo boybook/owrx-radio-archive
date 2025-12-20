@@ -71,6 +71,7 @@
                     :currentTime="currentTime"
                     :duration="duration"
                     :isPlaying="isPlaying"
+                    :isLoading="isLoading"
                     :volume="volume"
                     :playbackRate="playbackRate"
                     :continuousPlay="continuousPlay"
@@ -162,6 +163,7 @@ export default {
         const {
             currentTrack,
             isPlaying,
+            isLoading,
             currentTime,
             duration,
             volume,
@@ -358,6 +360,7 @@ export default {
             currentTime,
             duration,
             isPlaying,
+            isLoading,
             volume,
             playbackRate,
             continuousPlay,

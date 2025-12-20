@@ -22,8 +22,9 @@
 
             <div class="player-controls">
                 <button class="player-btn" @click="$emit('prev')" :disabled="!currentTrack">&#9198;</button>
-                <button class="player-btn play-btn" @click="$emit('toggle')" :disabled="!currentTrack">
-                    {{ isPlaying ? '&#10074;&#10074;' : '&#9654;' }}
+                <button class="player-btn play-btn" @click="$emit('toggle')" :disabled="!currentTrack || isLoading">
+                    <span v-if="isLoading" class="loading-spinner"></span>
+                    <span v-else v-html="isPlaying ? '&#10074;&#10074;' : '&#9654;'"></span>
                 </button>
                 <button class="player-btn" @click="$emit('next')" :disabled="!currentTrack">&#9197;</button>
 
@@ -87,6 +88,10 @@ export default {
             type: Boolean,
             default: false
         },
+        isLoading: {
+            type: Boolean,
+            default: false
+        },
         volume: {
             type: Number,
             default: 1
@@ -127,3 +132,21 @@ export default {
     }
 }
 </script>
+
+<style scoped>
+.loading-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+</style>
