@@ -132,6 +132,13 @@
 
 .timeline-segment.base.playing {
     background: #1a2a3a;
+    transition: background 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.timeline-segment.base.playing:hover {
+    background: #2a3a4a;
+    filter: brightness(1.2);
+    box-shadow: 0 0 6px rgba(33, 150, 243, 0.4);
 }
 
 /* Active layer: non-silence segments, bright green */
@@ -147,6 +154,14 @@
 
 .timeline-segment.active.playing {
     background: #2196F3;
+    transition: background 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Hover effect for playing segments */
+.timeline-segment.active.playing:hover {
+    background: #42A5F5;
+    filter: brightness(1.2);
+    box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
 }
 
 /* ============================================
