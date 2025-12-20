@@ -24,28 +24,41 @@ OpenWebRX+ 录音文件的时间轴播放器插件。将 AudioRecorder 录制的
 }
 ```
 
-### 2. 安装插件
+### 2. 注入脚本
 
-将 `radio-archive.js` 放入插件目录：
+在 **Settings → General Settings → Photo description** 中添加脚本。
+
+**方式一：CDN 引入（推荐）**
+
+无需下载，直接使用：
+
+```html
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://bg5drb.oss-cn-hangzhou.aliyuncs.com/radio-archive.js"></script>
+```
+
+**方式二：本地部署**
+
+将 `radio-archive.js` 放入插件目录后引入：
 
 ```bash
 cp dist/radio-archive.js /path/to/openwebrx/plugins/receiver/radio-archive/
 ```
-
-> Docker 环境需先将 plugins 目录映射出来
-
-### 3. 注入脚本
-
-在 **Settings → General Settings → Photo description** 中添加：
 
 ```html
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="static/plugins/receiver/radio-archive/radio-archive.js"></script>
 ```
 
-### 4. 访问
+> Docker 环境需先将 plugins 目录映射出来
+
+### 3. 访问
 
 打开 `/files` 页面即可使用。
+
+### 4. 服务端补丁（可选）
+
+如需完整的时间轴精准定位功能（语音时间映射、音频时长读取等），建议配合 [openwebrx-bg5drb-patch](https://github.com/boybook/openwebrx-bg5drb-patch) 使用。该补丁为录音生成时间戳映射文件，支持 Docker 一键部署。
 
 ## 本地开发
 
