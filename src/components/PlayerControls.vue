@@ -21,17 +21,21 @@
                 :style="{ '--progress': progressPercent + '%' }">
 
             <div class="player-controls">
-                <button class="player-btn" @click="$emit('prev')" :disabled="!currentTrack">&#9198;</button>
+                <button class="player-btn" @click="$emit('prev')" :disabled="!currentTrack">
+                    <Icon name="prev" :size="16" />
+                </button>
                 <button class="player-btn play-btn" @click="$emit('toggle')" :disabled="!currentTrack || isLoading">
                     <span v-if="isLoading" class="loading-spinner"></span>
-                    <span v-else v-html="isPlaying ? '&#10074;&#10074;' : '&#9654;'"></span>
+                    <Icon v-else :name="isPlaying ? 'pause' : 'play'" :size="22" />
                 </button>
-                <button class="player-btn" @click="$emit('next')" :disabled="!currentTrack">&#9197;</button>
+                <button class="player-btn" @click="$emit('next')" :disabled="!currentTrack">
+                    <Icon name="next" :size="16" />
+                </button>
 
                 <div class="player-spacer"></div>
 
                 <div class="player-volume">
-                    <span>&#128266;</span>
+                    <Icon name="volume" :size="18" />
                     <input
                         type="range"
                         class="volume-slider"
@@ -68,9 +72,13 @@
 <script>
 import { t } from '../modules/i18n.js'
 import { formatFreq, formatTime as formatTimeUtil, formatDuration } from '../modules/fileParser.js'
+import Icon from './Icon.vue'
 
 export default {
     name: 'PlayerControls',
+    components: {
+        Icon
+    },
     props: {
         currentTrack: {
             type: Object,
