@@ -61,3 +61,19 @@ jobs:
 
           **最后更新**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
           **Commit**: ${{ github.sha }}"
+
+      - name: Install OSSUtil
+        run: |
+          curl -o /tmp/ossutil64 https://gosspublic.alicdn.com/ossutil/1.7.8/ossutil64
+          chmod +x /tmp/ossutil64
+          sudo mv /tmp/ossutil64 /usr/local/bin/ossutil
+
+      - name: Upload to Aliyun OSS
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: bg5drb
+          OSS_REGION: oss-cn-hangzhou
+        run: |
+          ossutil config -e ${OSS_REGION}.aliyuncs.com -i ${OSS_ACCESS_KEY_ID} -k ${OSS_ACCESS_KEY_SECRET}
+          ossutil cp -r ./dist/radio-archive.js oss://${OSS_BUCKET}/ --force
