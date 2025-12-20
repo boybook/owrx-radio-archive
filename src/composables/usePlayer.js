@@ -3,7 +3,7 @@
  */
 import { ref } from 'vue'
 import { formatDuration } from '../modules/fileParser.js'
-import { getPlayableUrl, onLoadingChange, revokeAllBlobUrls } from '../modules/audioSourceManager.js'
+import { getPlayableUrl, onLoadingChange, revokeAllBlobUrls, revokeBlobUrl } from '../modules/audioSourceManager.js'
 
 export function usePlayer(recordingsState) {
     const {
@@ -316,6 +316,30 @@ export function usePlayer(recordingsState) {
         duration.value = 0
     }
 
+    // Refresh current audio (reload from server, maintain playback position)
+    async function refreshCurrentAudio() {
+        if (!currentTrack.value || !audio.value) return
+
+        const savedTime = audio.value.currentTime
+        const wasPlaying = isPlaying.value
+
+        // Clear blob cache for this file
+        revokeBlobUrl(currentTrack.value.href)
+
+        // Reload audio with cache busting
+        const audioSrc = await getPlayableUrl(currentTrack.value.href, { bustCache: true })
+        audio.value.src = audioSrc
+
+        // Restore playback position and state
+        audio.value.addEventListener('loadedmetadata', function seekOnce() {
+            audio.value.currentTime = savedTime
+            if (wasPlaying) audio.value.play()
+            audio.value.removeEventListener('loadedmetadata', seekOnce)
+        })
+
+        audio.value.load()
+    }
+
     // Check if current track matches filters (for date/freq change)
     function checkCurrentTrackFilters(newDate, newFreq, oldDate, oldFreq) {
         if (!currentTrack.value) return
@@ -376,6 +400,7 @@ export function usePlayer(recordingsState) {
         getProgressPercent,
         isCurrentlyPlaying,
         stopPlayback,
+        refreshCurrentAudio,
         checkCurrentTrackFilters
     }
 }

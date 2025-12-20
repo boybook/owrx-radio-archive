@@ -95,7 +95,7 @@ async function initApp() {
         }
 
         // 强制设置页面背景色
-        document.documentElement.style.background = '#222'
+        document.documentElement.style.background = '#121212'
 
         // In production mode, we need to wait for Vue
         if (!isDev) {

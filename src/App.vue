@@ -92,6 +92,7 @@
                     :recordings="filteredRecordings"
                     :isCurrentlyPlaying="isCurrentlyPlaying"
                     @play="playRecordingWithInteraction"
+                    @refresh="handleRefreshRecording"
                 />
             </div>
 
@@ -159,7 +160,8 @@ export default {
             canNextDate,
             getRecordingBaseSegment,
             getRecordingActiveSegments,
-            loadAllTimestamps
+            loadAllTimestamps,
+            loadTimestampData
         } = recordingsState
 
         // Player state
@@ -184,6 +186,7 @@ export default {
             setSpeed,
             getProgressPercent,
             isCurrentlyPlaying,
+            refreshCurrentAudio,
             checkCurrentTrackFilters
         } = playerState
 
@@ -230,6 +233,14 @@ export default {
         function playRecordingWithInteraction(recording, index) {
             recordInteraction()
             play(recording, index)
+        }
+
+        // Refresh a single recording (reload mp3 and jsonl)
+        async function handleRefreshRecording(rec) {
+            await loadTimestampData(rec, true)
+            if (isCurrentlyPlaying(rec)) {
+                await refreshCurrentAudio()
+            }
         }
 
         // Wrapped getPlayheadStyle with timestamp mapping
@@ -410,7 +421,8 @@ export default {
             getSubSegmentStyle,
             getPlayheadStyle,
             playWithInteraction,
-            playRecordingWithInteraction
+            playRecordingWithInteraction,
+            handleRefreshRecording
         }
     }
 }

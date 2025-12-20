@@ -290,11 +290,11 @@ export function useRecordings() {
     }
 
     // Load JSONL timestamp data for a recording
-    async function loadTimestampData(rec) {
+    async function loadTimestampData(rec, forceRefresh = false) {
         const jsonlUrl = rec.href.replace('.mp3', '.jsonl')
         try {
-            // Disable cache for latest recording (server may still be writing to it)
-            const fetchOptions = isLatestForFrequency(rec) ? { cache: 'no-store' } : {}
+            // Disable cache for latest recording or when force refresh
+            const fetchOptions = (forceRefresh || isLatestForFrequency(rec)) ? { cache: 'no-store' } : {}
             const resp = await fetch(jsonlUrl, fetchOptions)
             if (!resp.ok) return
             const content = await resp.text()
@@ -339,7 +339,8 @@ export function useRecordings() {
         getRecordingBaseSegment,
         isRecordingAnalyzed,
         getRecordingActiveSegments,
-        loadAllTimestamps
+        loadAllTimestamps,
+        loadTimestampData
     }
 }
 

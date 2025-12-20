@@ -304,6 +304,12 @@
     background: #333;
 }
 
+.rec-refresh-btn:focus {
+    outline: none;
+    opacity: 1;
+    color: #888;
+}
+
 /* ============================================
    Analysis Progress - Inline
    ============================================ */
