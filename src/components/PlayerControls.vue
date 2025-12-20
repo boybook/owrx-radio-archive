@@ -54,6 +54,10 @@
                         <input type="checkbox" :checked="continuousPlay" @change="$emit('update:continuousPlay', $event.target.checked)">
                         <span>{{ t('auto') }}</span>
                     </label>
+                    <label class="skip-short-segments">
+                        <input type="checkbox" :checked="skipShortSegments" @change="$emit('update:skipShortSegments', $event.target.checked)">
+                        <span>{{ t('skipShort') }}</span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -95,12 +99,16 @@ export default {
             type: Boolean,
             default: true
         },
+        skipShortSegments: {
+            type: Boolean,
+            default: true
+        },
         progressPercent: {
             type: Number,
             default: 0
         }
     },
-    emits: ['toggle', 'prev', 'next', 'seek', 'volume', 'speed', 'update:continuousPlay'],
+    emits: ['toggle', 'prev', 'next', 'seek', 'volume', 'speed', 'update:continuousPlay', 'update:skipShortSegments'],
     setup() {
         function formatDisplayTime(rec) {
             return formatTimeUtil(rec.date)

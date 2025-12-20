@@ -146,12 +146,64 @@ export function parseJsonlContent(content) {
 /**
  * Convert JSONL chunks to activeSegments format
  * @param {Array} chunks - Array of chunk objects from JSONL
- * @returns {Object} { segments: Array, realTimeRange: { start, end } | null }
+ * @param {Object} options - Optional settings
+ * @param {boolean} options.skipShort - Whether to skip short segments
+ * @param {number} options.shortThresholdMs - Threshold for short segments (default 2048ms)
+ * @param {number} options.proximityMs - Keep short segments within this range of long segments (default 5000ms)
+ * @param {number} options.longThresholdMs - Threshold for "long" segments that attract nearby short ones (default 5000ms)
+ * @returns {Object} { segments: Array, realTimeRange: { start, end } | null, allSkipped: boolean }
  */
-export function chunksToActiveSegments(chunks) {
-    if (!chunks?.length) return { segments: [], realTimeRange: null }
+export function chunksToActiveSegments(chunks, options = {}) {
+    const {
+        skipShort = false,
+        shortThresholdMs = 2048,
+        proximityMs = 5000,
+        longThresholdMs = 5000
+    } = options
 
-    const segments = chunks.map(chunk => {
+    if (!chunks?.length) return { segments: [], realTimeRange: null, allSkipped: false }
+
+    // Filter short segments if enabled
+    let filteredChunks
+    if (skipShort) {
+        // First, identify all valid (non-short) chunks
+        const validChunks = chunks.filter(chunk => chunk.duration_ms > shortThresholdMs)
+
+        if (validChunks.length === 0) {
+            // All chunks are short
+            return { segments: [], realTimeRange: null, allSkipped: true }
+        }
+
+        // Build time ranges only for LONG chunks (> longThresholdMs) - these attract nearby short segments
+        const longChunks = chunks.filter(chunk => chunk.duration_ms > longThresholdMs)
+        const attractRanges = longChunks.map(chunk => ({
+            start: chunk.start_time_ms - proximityMs,
+            end: chunk.start_time_ms + chunk.duration_ms + proximityMs
+        }))
+
+        // Keep chunks that are either valid OR within proximity of a long chunk
+        filteredChunks = chunks.filter(chunk => {
+            // Always keep valid (non-short) chunks
+            if (chunk.duration_ms > shortThresholdMs) return true
+
+            // Check if this short chunk is within proximity of any long chunk
+            const chunkStart = chunk.start_time_ms
+            const chunkEnd = chunk.start_time_ms + chunk.duration_ms
+
+            return attractRanges.some(range =>
+                chunkEnd > range.start && chunkStart < range.end
+            )
+        })
+    } else {
+        filteredChunks = chunks
+    }
+
+    // Check if all chunks were filtered out
+    if (!filteredChunks.length) {
+        return { segments: [], realTimeRange: null, allSkipped: true }
+    }
+
+    const segments = filteredChunks.map(chunk => {
         const utc = new Date(chunk.start_utc)
         // Calculate timeOfDay in local timezone (for timeline positioning)
         const timeOfDay = utc.getHours() * 3600 +
@@ -176,7 +228,7 @@ export function chunksToActiveSegments(chunks) {
         end: lastSeg.end
     }
 
-    return { segments, realTimeRange }
+    return { segments, realTimeRange, allSkipped: false }
 }
 
 /**

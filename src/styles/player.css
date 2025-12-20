@@ -189,7 +189,8 @@
     cursor: pointer;
 }
 
-.continuous-play {
+.continuous-play,
+.skip-short-segments {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -199,7 +200,8 @@
     margin-bottom: 0;
 }
 
-.continuous-play input {
+.continuous-play input,
+.skip-short-segments input {
     accent-color: #3d8c40;
 }
 

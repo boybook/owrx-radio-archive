@@ -8,7 +8,8 @@ export function usePlayer(recordingsState) {
     const {
         recordings,
         filteredRecordings,
-        SECONDS_PER_DAY
+        SECONDS_PER_DAY,
+        getRecordingActiveSegments
     } = recordingsState
 
     // State
@@ -21,6 +22,7 @@ export function usePlayer(recordingsState) {
     const volume = ref(1)
     const playbackRate = ref(1)
     const continuousPlay = ref(true)
+    const skipShortSegments = ref(true)  // Skip short segments by default
 
     // Methods
     function initAudio() {
@@ -103,17 +105,46 @@ export function usePlayer(recordingsState) {
     }
 
     function playPrev() {
-        if (currentIndex.value > 0) {
-            const idx = currentIndex.value - 1
-            play(filteredRecordings.value[idx], idx)
+        let prevIdx = currentIndex.value - 1
+
+        while (prevIdx >= 0) {
+            const prevRec = filteredRecordings.value[prevIdx]
+
+            if (!skipShortSegments.value) {
+                play(prevRec, prevIdx)
+                return
+            }
+
+            const baseSeg = recordingsState.getRecordingBaseSegment(prevRec, true)
+            if (!baseSeg?.allSkipped) {
+                play(prevRec, prevIdx)
+                return
+            }
+            prevIdx--
         }
     }
 
     function playNext() {
-        if (currentIndex.value < filteredRecordings.value.length - 1) {
-            const idx = currentIndex.value + 1
-            play(filteredRecordings.value[idx], idx)
+        let nextIdx = currentIndex.value + 1
+
+        while (nextIdx < filteredRecordings.value.length) {
+            const nextRec = filteredRecordings.value[nextIdx]
+
+            if (!skipShortSegments.value) {
+                play(nextRec, nextIdx)
+                return
+            }
+
+            const baseSeg = recordingsState.getRecordingBaseSegment(nextRec, true)
+            if (!baseSeg?.allSkipped) {
+                play(nextRec, nextIdx)
+                return
+            }
+            nextIdx++
         }
+
+        // No more valid recordings
+        isPlaying.value = false
     }
 
     function getSeekableDuration() {
@@ -173,6 +204,38 @@ export function usePlayer(recordingsState) {
 
     function onTimeUpdate() {
         currentTime.value = audio.value.currentTime
+
+        // Skip short segments during playback
+        if (skipShortSegments.value && currentTrack.value && isPlaying.value) {
+            const activeSegments = getRecordingActiveSegments(currentTrack.value, true)
+
+            if (activeSegments.length > 0) {
+                const time = audio.value.currentTime
+
+                // Check if current time is within any active segment
+                const inActiveSegment = activeSegments.some(seg =>
+                    time >= seg.audioStart && time < seg.audioEnd
+                )
+
+                if (!inActiveSegment) {
+                    // Find next active segment
+                    const nextSegment = activeSegments.find(seg => seg.audioStart > time)
+
+                    if (nextSegment) {
+                        // Jump to next active segment
+                        audio.value.currentTime = nextSegment.audioStart
+                    } else {
+                        // No more active segments, trigger end
+                        if (continuousPlay.value) {
+                            playNext()
+                        } else {
+                            audio.value.pause()
+                            isPlaying.value = false
+                        }
+                    }
+                }
+            }
+        }
     }
 
     function onLoadedMetadata() {
@@ -278,6 +341,7 @@ export function usePlayer(recordingsState) {
         volume,
         playbackRate,
         continuousPlay,
+        skipShortSegments,
         // Methods
         initAudio,
         play,

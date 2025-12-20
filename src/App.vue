@@ -48,8 +48,8 @@
                     :timelineTicks="timelineTicks"
                     :visibleDurationLabel="visibleDurationLabel"
                     :getSubSegmentStyle="getSubSegmentStyle"
-                    :getRecordingBaseSegment="getRecordingBaseSegment"
-                    :getRecordingActiveSegments="getRecordingActiveSegments"
+                    :getRecordingBaseSegment="wrappedGetRecordingBaseSegment"
+                    :getRecordingActiveSegments="wrappedGetRecordingActiveSegments"
                     :isCurrentlyPlaying="isCurrentlyPlaying"
                     :getPlayheadStyle="getPlayheadStyle"
                     :handleWheel="handleWheel"
@@ -74,6 +74,7 @@
                     :volume="volume"
                     :playbackRate="playbackRate"
                     :continuousPlay="continuousPlay"
+                    :skipShortSegments="skipShortSegments"
                     :progressPercent="getProgressPercent()"
                     @toggle="togglePlay"
                     @prev="playPrev"
@@ -82,6 +83,7 @@
                     @volume="setVolume"
                     @speed="setSpeed"
                     @update:continuousPlay="continuousPlay = $event"
+                    @update:skipShortSegments="skipShortSegments = $event"
                 />
 
                 <!-- Recording List -->
@@ -104,7 +106,7 @@
 <script>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { t, initI18n } from './modules/i18n.js'
-import { audioTimeToTimelineTime } from './modules/fileParser.js'
+import { audioTimeToTimelineTime, chunksToActiveSegments } from './modules/fileParser.js'
 import { useRecordings } from './composables/useRecordings.js'
 import { usePlayer } from './composables/usePlayer.js'
 import { useTimeline } from './composables/useTimeline.js'
@@ -165,6 +167,7 @@ export default {
             volume,
             playbackRate,
             continuousPlay,
+            skipShortSegments,
             play,
             playAtPosition,
             togglePlay,
@@ -201,16 +204,31 @@ export default {
             getPlayheadStyleByTime
         } = timelineState
 
+        // Wrapped functions to pass skipShortSegments
+        function wrappedGetRecordingBaseSegment(rec) {
+            return getRecordingBaseSegment(rec, skipShortSegments.value)
+        }
+
+        function wrappedGetRecordingActiveSegments(rec) {
+            return getRecordingActiveSegments(rec, skipShortSegments.value)
+        }
+
         // Wrapped getPlayheadStyle with timestamp mapping
         function getPlayheadStyle(currentTrack, currentTime) {
             if (!currentTrack) return { display: 'none' }
 
-            const analysis = analysisCache.get(currentTrack.filename)
+            const cached = analysisCache.get(currentTrack.filename)
             let playheadTime
 
-            if (analysis?.activeSegments?.length) {
-                const mapped = audioTimeToTimelineTime(currentTime, analysis.activeSegments)
-                playheadTime = mapped ?? (currentTrack.timeOfDay + currentTime)
+            if (cached?.rawChunks?.length) {
+                // Get segments from raw chunks (unfiltered for playhead)
+                const { segments } = chunksToActiveSegments(cached.rawChunks)
+                if (segments?.length) {
+                    const mapped = audioTimeToTimelineTime(currentTime, segments)
+                    playheadTime = mapped ?? (currentTrack.timeOfDay + currentTime)
+                } else {
+                    playheadTime = currentTrack.timeOfDay + currentTime
+                }
             } else {
                 playheadTime = currentTrack.timeOfDay + currentTime
             }
@@ -305,6 +323,8 @@ export default {
             canNextDate,
             getRecordingBaseSegment,
             getRecordingActiveSegments,
+            wrappedGetRecordingBaseSegment,
+            wrappedGetRecordingActiveSegments,
             // Player
             currentTrack,
             currentTime,
@@ -313,6 +333,7 @@ export default {
             volume,
             playbackRate,
             continuousPlay,
+            skipShortSegments,
             play,
             playAtPosition,
             togglePlay,

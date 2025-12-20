@@ -186,19 +186,37 @@ export function useRecordings() {
         return idx < availableDates.value.length - 1
     }
 
-    function getRecordingBaseSegment(rec) {
-        const analysis = analysisCache.get(rec.filename)
+    // Get base segment for a recording (always uses full data, not filtered)
+    function getRecordingBaseSegment(rec, skipShort = false) {
+        const cached = analysisCache.get(rec.filename)
 
-        // If JSONL data available, use real time range
-        if (analysis?.realTimeRange) {
-            const { start, end } = analysis.realTimeRange
-            const lastSeg = analysis.activeSegments[analysis.activeSegments.length - 1]
-            return {
-                start,
-                end,
-                audioStart: 0,
-                audioEnd: lastSeg?.audioEnd ?? 0,
-                recording: rec
+        // If JSONL data available, use real time range from full data
+        if (cached?.rawChunks?.length) {
+            // Always calculate base segment from full (unfiltered) data
+            const fullAnalysis = chunksToActiveSegments(cached.rawChunks, { skipShort: false })
+
+            if (fullAnalysis?.realTimeRange) {
+                const { start, end } = fullAnalysis.realTimeRange
+                const lastSeg = fullAnalysis.segments[fullAnalysis.segments.length - 1]
+
+                // Check if all segments would be filtered (for skip logic)
+                let allSkipped = false
+                if (skipShort) {
+                    const filteredAnalysis = chunksToActiveSegments(cached.rawChunks, {
+                        skipShort: true,
+                        shortThresholdMs: 2048
+                    })
+                    allSkipped = filteredAnalysis.allSkipped
+                }
+
+                return {
+                    start,
+                    end,
+                    audioStart: 0,
+                    audioEnd: lastSeg?.audioEnd ?? 0,
+                    recording: rec,
+                    allSkipped
+                }
             }
         }
 
@@ -209,24 +227,35 @@ export function useRecordings() {
             end: rec.timeOfDay + actualDuration,
             audioStart: 0,
             audioEnd: actualDuration,
-            recording: rec
+            recording: rec,
+            allSkipped: false
         }
     }
 
     // Preserved for future timestamp mapping feature
     function isRecordingAnalyzed(rec) {
-        const analysis = analysisCache.get(rec.filename)
-        return analysis && analysis.activeSegments && analysis.activeSegments.length > 0
+        const cached = analysisCache.get(rec.filename)
+        return cached && cached.rawChunks && cached.rawChunks.length > 0
     }
 
-    function getRecordingActiveSegments(rec) {
-        const analysis = analysisCache.get(rec.filename)
+    // Get active segments for a recording (with optional short segment filtering)
+    function getRecordingActiveSegments(rec, skipShort = false) {
+        const cached = analysisCache.get(rec.filename)
 
-        if (!analysis || !analysis.activeSegments || analysis.activeSegments.length === 0) {
+        if (!cached?.rawChunks?.length) {
             return []
         }
 
-        return analysis.activeSegments.map(seg => ({
+        const analysis = chunksToActiveSegments(cached.rawChunks, {
+            skipShort,
+            shortThresholdMs: 2048
+        })
+
+        if (!analysis?.segments?.length) {
+            return []
+        }
+
+        return analysis.segments.map(seg => ({
             start: seg.start,
             end: seg.end,
             audioStart: seg.audioStart,
@@ -253,10 +282,9 @@ export function useRecordings() {
             if (!resp.ok) return
             const content = await resp.text()
             const chunks = parseJsonlContent(content)
-            const { segments, realTimeRange } = chunksToActiveSegments(chunks)
+            // Store raw chunks for dynamic filtering
             analysisCache.set(rec.filename, {
-                activeSegments: segments,
-                realTimeRange
+                rawChunks: chunks
             })
         } catch (e) {
             // Silent fail - will use fallback rendering

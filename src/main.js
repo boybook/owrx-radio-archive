@@ -85,6 +85,18 @@ function init() {
 
 async function initApp() {
     try {
+        // 注入 viewport meta 标签（移动端适配）
+        if (!document.querySelector('meta[name="viewport"]')) {
+            const viewport = document.createElement('meta')
+            viewport.name = 'viewport'
+            viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'
+            document.head.appendChild(viewport)
+            console.log('[RadioArchive] Viewport meta injected')
+        }
+
+        // 强制设置页面背景色
+        document.documentElement.style.background = '#222'
+
         // In production mode, we need to wait for Vue
         if (!isDev) {
             const Vue = await waitForVue()
