@@ -201,7 +201,8 @@ export default {
             handleTouchMove,
             handleTouchEnd,
             getSubSegmentStyle,
-            getPlayheadStyleByTime
+            getPlayheadStyleByTime,
+            autoFollowPlayhead
         } = timelineState
 
         // Wrapped functions to pass skipShortSegments
@@ -235,6 +236,33 @@ export default {
 
             return getPlayheadStyleByTime(playheadTime)
         }
+
+        // 计算播放头在时间轴上的绝对时间
+        function getPlayheadTime(track, time) {
+            if (!track) return null
+
+            const cached = analysisCache.get(track.filename)
+
+            if (cached?.rawChunks?.length) {
+                const { segments } = chunksToActiveSegments(cached.rawChunks)
+                if (segments?.length) {
+                    const mapped = audioTimeToTimelineTime(time, segments)
+                    return mapped ?? (track.timeOfDay + time)
+                }
+            }
+
+            return track.timeOfDay + time
+        }
+
+        // 监听播放状态，实现自动跟随
+        watch([isPlaying, currentTime], ([playing, time]) => {
+            if (!playing || !currentTrack.value) return
+
+            const playheadTime = getPlayheadTime(currentTrack.value, time)
+            if (playheadTime !== null) {
+                autoFollowPlayhead(playheadTime)
+            }
+        }, { flush: 'post' })
 
         // Methods
         function switchView(view) {

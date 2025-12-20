@@ -5,6 +5,7 @@ import { ref, computed } from 'vue'
 
 const SECONDS_PER_DAY = 86400
 const MAX_ZOOM = 1440  // 最大缩放到1分钟视图
+const AUTO_FOLLOW_DELAY = 10000  // 10秒无操作后自动跟随
 
 export function useTimeline() {
     // State
@@ -14,6 +15,7 @@ export function useTimeline() {
     const isDragging = ref(false)
     const dragStartX = ref(0)
     const dragStartViewTime = ref(0)
+    const lastInteractionTime = ref(0)  // 最后一次用户交互时间
 
     // Touch gesture state
     let touchStartDistance = 0
@@ -103,6 +105,37 @@ export function useTimeline() {
         return Math.max(0, Math.min(value, maxStart))
     }
 
+    // 记录用户交互时间
+    function recordInteraction() {
+        lastInteractionTime.value = Date.now()
+    }
+
+    // 检查是否可以自动跟随
+    function canAutoFollow() {
+        return Date.now() - lastInteractionTime.value > AUTO_FOLLOW_DELAY
+    }
+
+    // 自动跟随播放头
+    function autoFollowPlayhead(playheadTime) {
+        if (!canAutoFollow()) return false
+
+        const duration = visibleDuration.value
+        const startTime = viewStartTime.value
+        const endTime = viewEndTime.value
+
+        // 播放头超出视图或超过视图 80% 位置时才自动跟随
+        const isOutOfView = playheadTime < startTime || playheadTime > endTime
+        const positionRatio = (playheadTime - startTime) / duration
+
+        if (isOutOfView || positionRatio > 0.8) {
+            // 使播放头在视图 1/5 位置
+            const targetViewStart = playheadTime - duration * 0.2
+            viewStartTime.value = clampViewStart(targetViewStart)
+            return true
+        }
+        return false
+    }
+
     function zoomAtPosition(newZoom, positionRatio) {
         const oldZoom = zoomLevel.value
         newZoom = Math.max(1, Math.min(MAX_ZOOM, newZoom))
@@ -116,19 +149,23 @@ export function useTimeline() {
     }
 
     function zoomIn() {
+        recordInteraction()
         zoomAtPosition(zoomLevel.value * 2, 0.5)
     }
 
     function zoomOut() {
+        recordInteraction()
         zoomAtPosition(zoomLevel.value / 2, 0.5)
     }
 
     function resetZoom() {
+        recordInteraction()
         zoomLevel.value = 1
         viewStartTime.value = 0
     }
 
     function handleWheel(e) {
+        recordInteraction()
         const rect = e.currentTarget.getBoundingClientRect()
 
         if (e.ctrlKey) {
@@ -155,6 +192,7 @@ export function useTimeline() {
         if (e.pointerType === 'mouse' && e.button !== 0) return
         if (e.target.closest('.timeline-segment')) return
 
+        recordInteraction()
         isDragging.value = true
         dragStartX.value = e.clientX
         dragStartViewTime.value = viewStartTime.value
@@ -198,6 +236,7 @@ export function useTimeline() {
     function handleTouchStart(e) {
         if (e.target.closest('.timeline-segment')) return
 
+        recordInteraction()
         if (e.touches.length === 2) {
             isTouchZooming = true
             touchStartDistance = getTouchDistance(e.touches)
@@ -295,6 +334,7 @@ export function useTimeline() {
         viewStartTime,
         timelineRef,
         isDragging,
+        lastInteractionTime,
         // Computed
         viewEndTime,
         visibleDuration,
@@ -313,7 +353,11 @@ export function useTimeline() {
         handleTouchEnd,
         getSubSegmentStyle,
         getPlayheadStyle,
-        getPlayheadStyleByTime
+        getPlayheadStyleByTime,
+        // Auto-follow
+        recordInteraction,
+        canAutoFollow,
+        autoFollowPlayhead
     }
 }
 
