@@ -62,7 +62,7 @@
                     :zoomIn="zoomIn"
                     :zoomOut="zoomOut"
                     :resetZoom="resetZoom"
-                    @play="playAtPosition"
+                    @play="playWithInteraction"
                 />
 
                 <!-- Player -->
@@ -91,7 +91,7 @@
                 <RecordingList
                     :recordings="filteredRecordings"
                     :isCurrentlyPlaying="isCurrentlyPlaying"
-                    @play="play"
+                    @play="playRecordingWithInteraction"
                 />
             </div>
 
@@ -208,7 +208,8 @@ export default {
             handleTouchEnd,
             getSubSegmentStyle,
             getPlayheadStyleByTime,
-            autoFollowPlayhead
+            autoFollowPlayhead,
+            recordInteraction
         } = timelineState
 
         // Wrapped functions to pass skipShortSegments
@@ -218,6 +219,17 @@ export default {
 
         function wrappedGetRecordingActiveSegments(rec) {
             return getRecordingActiveSegments(rec, skipShortSegments.value)
+        }
+
+        // 包装播放函数，同时记录用户交互（触发滚动冷却）
+        function playWithInteraction(recording, position, endPosition = null) {
+            recordInteraction()
+            playAtPosition(recording, position, endPosition)
+        }
+
+        function playRecordingWithInteraction(recording, index) {
+            recordInteraction()
+            play(recording, index)
         }
 
         // Wrapped getPlayheadStyle with timestamp mapping
@@ -396,7 +408,9 @@ export default {
             handleTouchMove,
             handleTouchEnd,
             getSubSegmentStyle,
-            getPlayheadStyle
+            getPlayheadStyle,
+            playWithInteraction,
+            playRecordingWithInteraction
         }
     }
 }

@@ -44,20 +44,27 @@ export function usePlayer(recordingsState) {
         }
     }
 
-    async function play(recording, index, startPosition = 0) {
+    async function play(recording, index, startPosition = 0, endPosition = null) {
         initAudio()
 
-        // If same track, just seek (don't reload)
+        // If same track, check if we should toggle or seek
         if (currentTrack.value?.filename === recording.filename) {
-            if (startPosition === 0) {
-                // Toggle play/pause
+            const currentAudioTime = audio.value.currentTime
+
+            // 判断当前播放时间是否在点击的片段范围内
+            const isInClickedSegment = endPosition !== null
+                ? (currentAudioTime >= startPosition && currentAudioTime < endPosition)
+                : (startPosition === 0)  // base segment 点击时，position=0 表示整个录音
+
+            if (isInClickedSegment) {
+                // 在当前片段内，toggle 播放/暂停
                 if (isPlaying.value) {
                     audio.value.pause()
                 } else {
                     audio.value.play()
                 }
             } else {
-                // Seek to position
+                // 不在当前片段，跳转到目标位置
                 audio.value.currentTime = startPosition
                 if (!isPlaying.value) {
                     audio.value.play()
@@ -99,9 +106,9 @@ export function usePlayer(recordingsState) {
         audio.value.play()
     }
 
-    function playAtPosition(recording, position) {
+    function playAtPosition(recording, position, endPosition = null) {
         const index = filteredRecordings.value.indexOf(recording)
-        play(recording, index, position)
+        play(recording, index, position, endPosition)
     }
 
     function togglePlay() {

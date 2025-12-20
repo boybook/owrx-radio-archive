@@ -42,7 +42,7 @@
                             :class="{ playing: isCurrentlyPlaying(rec) }"
                             :style="getSubSegmentStyle(seg)"
                             :title="formatSegmentTitle(seg)"
-                            @click.stop="$emit('play', seg.recording, seg.audioStart)">
+                            @click.stop="$emit('play', seg.recording, seg.audioStart, seg.audioEnd)">
                         </div>
                     </template>
                     <div
