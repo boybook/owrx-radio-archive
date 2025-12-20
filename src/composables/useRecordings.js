@@ -10,6 +10,9 @@ import {
     chunksToActiveSegments
 } from '../modules/fileParser.js'
 
+// localStorage key
+const STORAGE_KEY_FREQ = 'radio-archive-selected-freq'
+
 export function useRecordings() {
     // State
     const recordings = ref([])
@@ -148,7 +151,18 @@ export function useRecordings() {
             selectedDate.value = availableDates.value[availableDates.value.length - 1]
         }
         if (availableFreqs.value.length > 0) {
-            selectedFreq.value = availableFreqs.value[0]
+            // Try to restore from localStorage
+            const savedFreq = localStorage.getItem(STORAGE_KEY_FREQ)
+            if (savedFreq) {
+                const freq = parseFloat(savedFreq)
+                if (availableFreqs.value.includes(freq)) {
+                    selectedFreq.value = freq
+                } else {
+                    selectedFreq.value = availableFreqs.value[0]
+                }
+            } else {
+                selectedFreq.value = availableFreqs.value[0]
+            }
         }
 
         console.log('[RadioArchive] Selected date:', selectedDate.value)
@@ -161,6 +175,9 @@ export function useRecordings() {
 
     function selectFreq(freq) {
         selectedFreq.value = freq
+        if (freq !== null) {
+            localStorage.setItem(STORAGE_KEY_FREQ, freq.toString())
+        }
     }
 
     function prevDate() {

@@ -131,8 +131,12 @@ export default {
         // Initialize i18n
         initI18n()
 
-        // View state
-        const activeView = ref('timeline')
+        // localStorage keys
+        const STORAGE_KEY_VIEW = 'radio-archive-active-view'
+
+        // View state - restore from localStorage
+        const savedView = localStorage.getItem(STORAGE_KEY_VIEW)
+        const activeView = ref(savedView === 'original' ? 'original' : 'timeline')
 
         // Recordings state
         const recordingsState = useRecordings()
@@ -269,6 +273,7 @@ export default {
         // Methods
         function switchView(view) {
             activeView.value = view
+            localStorage.setItem(STORAGE_KEY_VIEW, view)
         }
 
         function handleDateSelect(dateKey) {
@@ -289,7 +294,7 @@ export default {
             if (originalView) {
                 originalView.classList.toggle('active', newView === 'original')
             }
-        })
+        }, { immediate: true })
 
         // Keyboard shortcuts
         function handleKeydown(e) {
