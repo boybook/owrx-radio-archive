@@ -112,6 +112,7 @@ import { audioTimeToTimelineTime, chunksToActiveSegments } from './modules/fileP
 import { useRecordings } from './composables/useRecordings.js'
 import { usePlayer } from './composables/usePlayer.js'
 import { useTimeline } from './composables/useTimeline.js'
+import { getUrlParam, updateUrlParam } from './utils/urlParams.js'
 
 import FrequencySelector from './components/FrequencySelector.vue'
 import DateSelector from './components/DateSelector.vue'
@@ -135,9 +136,17 @@ export default {
         // localStorage keys
         const STORAGE_KEY_VIEW = 'radio-archive-active-view'
 
-        // View state - restore from localStorage
+        // View state - restore with priority: URL参数 > localStorage > 默认值
+        const urlView = getUrlParam('view')
         const savedView = localStorage.getItem(STORAGE_KEY_VIEW)
-        const activeView = ref(savedView === 'original' ? 'original' : 'timeline')
+
+        let initialView = 'timeline' // 默认值
+        if (urlView === 'timeline' || urlView === 'original') {
+            initialView = urlView
+        } else if (savedView === 'original') {
+            initialView = 'original'
+        }
+        const activeView = ref(initialView)
 
         // Recordings state
         const recordingsState = useRecordings()
@@ -297,6 +306,7 @@ export default {
         function switchView(view) {
             activeView.value = view
             localStorage.setItem(STORAGE_KEY_VIEW, view)
+            updateUrlParam('view', view)
         }
 
         function handleDateSelect(dateKey) {
@@ -350,6 +360,11 @@ export default {
                 parseFilesFromDOM()
                 await loadAllTimestamps()
             })
+
+            // 同步初始状态到URL（如果URL没有view参数）
+            if (!getUrlParam('view')) {
+                updateUrlParam('view', activeView.value)
+            }
 
             document.addEventListener('keydown', handleKeydown)
         })

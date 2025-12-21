@@ -9,6 +9,7 @@ import {
     parseJsonlContent,
     chunksToActiveSegments
 } from '../modules/fileParser.js'
+import { getUrlParam, updateUrlParam } from '../utils/urlParams.js'
 
 // localStorage key
 const STORAGE_KEY_FREQ = 'radio-archive-selected-freq'
@@ -151,17 +152,34 @@ export function useRecordings() {
             selectedDate.value = availableDates.value[availableDates.value.length - 1]
         }
         if (availableFreqs.value.length > 0) {
-            // Try to restore from localStorage
+            // 优先级: URL参数 > localStorage > 默认值
+            const urlFreq = getUrlParam('freq')
             const savedFreq = localStorage.getItem(STORAGE_KEY_FREQ)
-            if (savedFreq) {
+
+            let targetFreq = null
+
+            // 首先尝试从URL恢复
+            if (urlFreq) {
+                const freq = parseFloat(urlFreq)
+                if (!isNaN(freq) && availableFreqs.value.includes(freq)) {
+                    targetFreq = freq
+                }
+            }
+
+            // 如果URL没有有效频率，尝试localStorage
+            if (targetFreq === null && savedFreq) {
                 const freq = parseFloat(savedFreq)
                 if (availableFreqs.value.includes(freq)) {
-                    selectedFreq.value = freq
-                } else {
-                    selectedFreq.value = availableFreqs.value[0]
+                    targetFreq = freq
                 }
-            } else {
-                selectedFreq.value = availableFreqs.value[0]
+            }
+
+            // 设置最终值（如果都没有则用第一个）
+            selectedFreq.value = targetFreq ?? availableFreqs.value[0]
+
+            // 同步到URL（如果URL没有freq参数）
+            if (!urlFreq) {
+                updateUrlParam('freq', selectedFreq.value)
             }
         }
 
@@ -177,6 +195,7 @@ export function useRecordings() {
         selectedFreq.value = freq
         if (freq !== null) {
             localStorage.setItem(STORAGE_KEY_FREQ, freq.toString())
+            updateUrlParam('freq', freq)
         }
     }
 
