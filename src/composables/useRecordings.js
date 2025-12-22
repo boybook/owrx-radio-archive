@@ -27,8 +27,21 @@ export function useRecordings() {
 
     // Computed
     const availableDates = computed(() => {
-        const dates = [...new Set(recordings.value.map(r => r.dateKey))]
-        return dates.sort()
+        const dates = new Set()
+        recordings.value.forEach(r => {
+            // 添加原始日期
+            dates.add(r.dateKey)
+            // 检查跨日延伸
+            const duration = r.audioDuration && isFinite(r.audioDuration) ? r.audioDuration : 0
+            if (duration > 0 && r.timeOfDay + duration > SECONDS_PER_DAY) {
+                // 计算延伸到的下一天日期
+                const nextDate = new Date(r.date)
+                nextDate.setDate(nextDate.getDate() + 1)
+                const nextDateKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`
+                dates.add(nextDateKey)
+            }
+        })
+        return [...dates].sort()
     })
 
     const availableFreqs = computed(() => {
@@ -232,8 +245,17 @@ export function useRecordings() {
             const fullAnalysis = chunksToActiveSegments(cached.rawChunks, { skipShort: false })
 
             if (fullAnalysis?.realTimeRange) {
-                const { start, end } = fullAnalysis.realTimeRange
+                let { start, end } = fullAnalysis.realTimeRange
                 const lastSeg = fullAnalysis.segments[fullAnalysis.segments.length - 1]
+
+                // 跨日录音时间调整：将原始时间偏移到当前日期视图
+                if (rec.isCrossDay) {
+                    start -= SECONDS_PER_DAY
+                    end -= SECONDS_PER_DAY
+                }
+
+                // 裁剪 end 不超过当天边界
+                end = Math.min(end, SECONDS_PER_DAY)
 
                 // Check if all segments would be filtered (for skip logic)
                 let allSkipped = false
@@ -258,9 +280,14 @@ export function useRecordings() {
 
         // Fallback: use audio duration
         const actualDuration = rec.audioDuration && isFinite(rec.audioDuration) ? rec.audioDuration : 60
+        let end = rec.timeOfDay + actualDuration
+
+        // 裁剪 end 不超过当天边界
+        end = Math.min(end, SECONDS_PER_DAY)
+
         return {
             start: rec.timeOfDay,
-            end: rec.timeOfDay + actualDuration,
+            end: end,
             audioStart: 0,
             audioEnd: actualDuration,
             recording: rec,
@@ -291,13 +318,32 @@ export function useRecordings() {
             return []
         }
 
-        return analysis.segments.map(seg => ({
-            start: seg.start,
-            end: seg.end,
-            audioStart: seg.audioStart,
-            audioEnd: seg.audioEnd,
-            recording: rec
-        }))
+        return analysis.segments.map(seg => {
+            let start = seg.start
+            let end = seg.end
+
+            // 跨日录音时间调整：将原始时间偏移到当前日期视图
+            if (rec.isCrossDay) {
+                start -= SECONDS_PER_DAY
+                end -= SECONDS_PER_DAY
+            }
+
+            // 裁剪 end 不超过当天边界
+            end = Math.min(end, SECONDS_PER_DAY)
+
+            // 如果片段完全在当天之前（裁剪后 start >= end），跳过
+            if (start >= end) {
+                return null
+            }
+
+            return {
+                start,
+                end,
+                audioStart: seg.audioStart,
+                audioEnd: seg.audioEnd,
+                recording: rec
+            }
+        }).filter(seg => seg !== null)
     }
 
     // Check if recording is the latest for its frequency

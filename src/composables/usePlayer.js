@@ -10,7 +10,9 @@ export function usePlayer(recordingsState) {
         recordings,
         filteredRecordings,
         SECONDS_PER_DAY,
-        getRecordingActiveSegments
+        getRecordingActiveSegments,
+        canNextDate,
+        nextDate
     } = recordingsState
 
     // State
@@ -157,6 +159,42 @@ export function usePlayer(recordingsState) {
                 return
             }
             nextIdx++
+        }
+
+        // 当天没有更多录音时，尝试切换到下一天
+        if (canNextDate()) {
+            nextDate()
+
+            // 等待 filteredRecordings 更新后播放下一天的第一个录音
+            setTimeout(() => {
+                const nextDayRecordings = filteredRecordings.value
+                if (nextDayRecordings.length > 0) {
+                    let firstIdx = 0
+
+                    // 如果启用了跳过短片段，找第一个有效录音
+                    if (skipShortSegments.value) {
+                        while (firstIdx < nextDayRecordings.length) {
+                            const rec = nextDayRecordings[firstIdx]
+                            const baseSeg = recordingsState.getRecordingBaseSegment(rec, true)
+                            if (!baseSeg?.allSkipped) {
+                                break
+                            }
+                            firstIdx++
+                        }
+                    }
+
+                    if (firstIdx < nextDayRecordings.length) {
+                        play(nextDayRecordings[firstIdx], firstIdx)
+                        return
+                    }
+                }
+                // 下一天也没有有效录音，停止播放
+                if (audio.value) {
+                    audio.value.pause()
+                }
+                isPlaying.value = false
+            }, 0)
+            return
         }
 
         // No more valid recordings, stop playback
