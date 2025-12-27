@@ -113,7 +113,7 @@ import { useRecordings } from './composables/useRecordings.js'
 import { usePlayer } from './composables/usePlayer.js'
 import { useTimeline } from './composables/useTimeline.js'
 import { getUrlParam, updateUrlParam } from './utils/urlParams.js'
-import { STORAGE_KEY_VIEW } from './modules/constants.js'
+import { SECONDS_PER_DAY, STORAGE_KEY_VIEW } from './modules/constants.js'
 
 import FrequencySelector from './components/FrequencySelector.vue'
 import DateSelector from './components/DateSelector.vue'
@@ -263,8 +263,15 @@ export default {
                     recordingStartDate: track.date
                 })
                 if (segments?.length) {
-                    const mapped = audioTimeToTimelineTime(time, segments)
-                    return mapped ?? (track.timeOfDay + time)
+                    let mapped = audioTimeToTimelineTime(time, segments)
+                    if (mapped !== null) {
+                        // 跨日录音时间调整：将原始时间偏移到当前日期视图
+                        if (track.isCrossDay) {
+                            const offset = (track.crossDayOffset || 1) * SECONDS_PER_DAY
+                            mapped -= offset
+                        }
+                        return mapped
+                    }
                 }
             }
 
