@@ -2,12 +2,13 @@
  * useTimeline - Timeline zoom and pan logic composable
  */
 import { ref, computed } from 'vue'
-
-const SECONDS_PER_DAY = 86400
-const MAX_ZOOM = 1440  // 最大缩放到1分钟视图
-const AUTO_FOLLOW_DELAY = 10000  // 10秒无操作后自动跟随
-const TAP_THRESHOLD = 10      // 像素：超过此距离视为拖拽而非 tap
-const TAP_MAX_DURATION = 300  // 毫秒：超过此时间视为长按而非 tap
+import {
+    SECONDS_PER_DAY,
+    MAX_ZOOM,
+    AUTO_FOLLOW_DELAY,
+    TAP_THRESHOLD,
+    TAP_MAX_DURATION
+} from '../modules/constants.js'
 
 export function useTimeline() {
     // State

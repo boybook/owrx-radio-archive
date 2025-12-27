@@ -87,9 +87,9 @@
                     @update:skipShortSegments="skipShortSegments = $event"
                 />
 
-                <!-- Recording List -->
+                <!-- Recording List (includes cross-day recordings) -->
                 <RecordingList
-                    :recordings="filteredRecordings"
+                    :recordings="timelineRecordings"
                     :isCurrentlyPlaying="isCurrentlyPlaying"
                     @play="playRecordingWithInteraction"
                     @refresh="handleRefreshRecording"
@@ -113,6 +113,7 @@ import { useRecordings } from './composables/useRecordings.js'
 import { usePlayer } from './composables/usePlayer.js'
 import { useTimeline } from './composables/useTimeline.js'
 import { getUrlParam, updateUrlParam } from './utils/urlParams.js'
+import { STORAGE_KEY_VIEW } from './modules/constants.js'
 
 import FrequencySelector from './components/FrequencySelector.vue'
 import DateSelector from './components/DateSelector.vue'
@@ -132,9 +133,6 @@ export default {
     setup() {
         // Initialize i18n
         initI18n()
-
-        // localStorage keys
-        const STORAGE_KEY_VIEW = 'radio-archive-active-view'
 
         // View state - restore with priority: URL参数 > localStorage > 默认值
         const urlView = getUrlParam('view')
@@ -252,29 +250,6 @@ export default {
             }
         }
 
-        // Wrapped getPlayheadStyle with timestamp mapping
-        function getPlayheadStyle(currentTrack, currentTime) {
-            if (!currentTrack) return { display: 'none' }
-
-            const cached = analysisCache.get(currentTrack.filename)
-            let playheadTime
-
-            if (cached?.rawChunks?.length) {
-                // Get segments from raw chunks (unfiltered for playhead)
-                const { segments } = chunksToActiveSegments(cached.rawChunks)
-                if (segments?.length) {
-                    const mapped = audioTimeToTimelineTime(currentTime, segments)
-                    playheadTime = mapped ?? (currentTrack.timeOfDay + currentTime)
-                } else {
-                    playheadTime = currentTrack.timeOfDay + currentTime
-                }
-            } else {
-                playheadTime = currentTrack.timeOfDay + currentTime
-            }
-
-            return getPlayheadStyleByTime(playheadTime)
-        }
-
         // 计算播放头在时间轴上的绝对时间
         function getPlayheadTime(track, time) {
             if (!track) return null
@@ -282,7 +257,11 @@ export default {
             const cached = analysisCache.get(track.filename)
 
             if (cached?.rawChunks?.length) {
-                const { segments } = chunksToActiveSegments(cached.rawChunks)
+                // Get segments from raw chunks (unfiltered for playhead)
+                // Include recordingStartDate for cross-day time calculation
+                const { segments } = chunksToActiveSegments(cached.rawChunks, {
+                    recordingStartDate: track.date
+                })
                 if (segments?.length) {
                     const mapped = audioTimeToTimelineTime(time, segments)
                     return mapped ?? (track.timeOfDay + time)
@@ -290,6 +269,13 @@ export default {
             }
 
             return track.timeOfDay + time
+        }
+
+        // Wrapped getPlayheadStyle with timestamp mapping
+        function getPlayheadStyle(currentTrack, currentTime) {
+            if (!currentTrack) return { display: 'none' }
+            const playheadTime = getPlayheadTime(currentTrack, currentTime)
+            return playheadTime !== null ? getPlayheadStyleByTime(playheadTime) : { display: 'none' }
         }
 
         // 监听播放状态，实现自动跟随

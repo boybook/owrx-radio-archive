@@ -1,6 +1,8 @@
 /**
  * FileParser - Parse REC-YYMMDD-HHMMSS-FREQ.mp3 filenames
  */
+import { SECONDS_PER_DAY } from './constants.js'
+import { formatDateKey, timeOfDayFromDate, getDayOffset } from './dateUtils.js'
 
 // Pattern: REC-251214-100246-145280.mp3
 const PATTERN = /^REC-(\d{2})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(\d+)\.mp3$/i
@@ -29,10 +31,7 @@ export function parseFilename(filename) {
     const date = new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHours, utcMinutes, utcSeconds))
 
     // dateKey based on local timezone (for date selector)
-    const localYear = date.getFullYear()
-    const localMonth = date.getMonth() + 1
-    const localDay = date.getDate()
-    const dateKey = `${localYear}-${String(localMonth).padStart(2, '0')}-${String(localDay).padStart(2, '0')}`
+    const dateKey = formatDateKey(date)
 
     // hours/minutes/seconds use local timezone (for display)
     const hours = date.getHours()
@@ -40,7 +39,7 @@ export function parseFilename(filename) {
     const seconds = date.getSeconds()
 
     // timeOfDay based on local timezone (for timeline positioning)
-    const timeOfDay = hours * 3600 + minutes * 60 + seconds
+    const timeOfDay = timeOfDayFromDate(date)
 
     return {
         filename,
@@ -151,6 +150,7 @@ export function parseJsonlContent(content) {
  * @param {number} options.shortThresholdMs - Threshold for short segments (default 2048ms)
  * @param {number} options.proximityMs - Keep short segments within this range of long segments (default 5000ms)
  * @param {number} options.longThresholdMs - Threshold for "long" segments that attract nearby short ones (default 5000ms)
+ * @param {Date} options.recordingStartDate - Recording start date for cross-day time calculation
  * @returns {Object} { segments: Array, realTimeRange: { start, end } | null, allSkipped: boolean }
  */
 export function chunksToActiveSegments(chunks, options = {}) {
@@ -158,7 +158,8 @@ export function chunksToActiveSegments(chunks, options = {}) {
         skipShort = false,
         shortThresholdMs = 2048,
         proximityMs = 5000,
-        longThresholdMs = 5000
+        longThresholdMs = 5000,
+        recordingStartDate = null
     } = options
 
     if (!chunks?.length) return { segments: [], realTimeRange: null, allSkipped: false }
@@ -206,10 +207,18 @@ export function chunksToActiveSegments(chunks, options = {}) {
     const segments = filteredChunks.map(chunk => {
         const utc = new Date(chunk.start_utc)
         // Calculate timeOfDay in local timezone (for timeline positioning)
-        const timeOfDay = utc.getHours() * 3600 +
-                          utc.getMinutes() * 60 +
-                          utc.getSeconds() +
-                          utc.getMilliseconds() / 1000
+        let timeOfDay = timeOfDayFromDate(utc, true)
+
+        // Handle cross-day recordings: calculate day offset from recording start date
+        if (recordingStartDate) {
+            const dayOffset = getDayOffset(recordingStartDate, utc)
+
+            // Add day offset to timeOfDay for cross-day chunks
+            if (dayOffset > 0) {
+                timeOfDay += dayOffset * SECONDS_PER_DAY
+            }
+        }
+
         const durationSec = chunk.duration_ms / 1000
 
         return {

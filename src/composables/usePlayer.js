@@ -4,12 +4,13 @@
 import { ref } from 'vue'
 import { formatDuration } from '../modules/fileParser.js'
 import { getPlayableUrl, onLoadingChange, revokeAllBlobUrls, revokeBlobUrl } from '../modules/audioSourceManager.js'
+import { SECONDS_PER_DAY } from '../modules/constants.js'
+import { formatDateKey } from '../modules/dateUtils.js'
 
 export function usePlayer(recordingsState) {
     const {
         recordings,
         filteredRecordings,
-        SECONDS_PER_DAY,
         getRecordingActiveSegments,
         canNextDate,
         nextDate
@@ -391,10 +392,9 @@ export function usePlayer(recordingsState) {
             if (trackDate !== newDate) {
                 const dur = currentTrack.value.audioDuration || 0
                 if (currentTrack.value.timeOfDay + dur > SECONDS_PER_DAY) {
-                    const nextDate = new Date(currentTrack.value.date)
-                    nextDate.setDate(nextDate.getDate() + 1)
-                    const nextDateKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`
-                    matchesCrossDay = nextDateKey === newDate
+                    const nextDateObj = new Date(currentTrack.value.date)
+                    nextDateObj.setDate(nextDateObj.getDate() + 1)
+                    matchesCrossDay = formatDateKey(nextDateObj) === newDate
                 }
             }
 

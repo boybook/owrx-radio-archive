@@ -10,9 +10,14 @@ import {
     chunksToActiveSegments
 } from '../modules/fileParser.js'
 import { getUrlParam, updateUrlParam } from '../utils/urlParams.js'
-
-// localStorage key
-const STORAGE_KEY_FREQ = 'radio-archive-selected-freq'
+import { SECONDS_PER_DAY, STORAGE_KEY_FREQ } from '../modules/constants.js'
+import {
+    formatDateKey,
+    getDayOffset,
+    timeOfDayFromDate,
+    clampTimeToDay,
+    isTimeOutOfDay
+} from '../modules/dateUtils.js'
 
 export function useRecordings() {
     // State
@@ -22,8 +27,25 @@ export function useRecordings() {
     // analysisCache preserved for future timestamp mapping feature
     const analysisCache = reactive(new Map())
 
-    // Constants
-    const SECONDS_PER_DAY = 86400
+    // Get the physical end time of a recording (based on JSONL data if available)
+    // Returns time in seconds relative to recording start date (can exceed SECONDS_PER_DAY for cross-day)
+    function getRecordingPhysicalEndTime(rec) {
+        const cached = analysisCache.get(rec.filename)
+        if (cached?.rawChunks?.length) {
+            // Use JSONL last chunk's end time
+            const lastChunk = cached.rawChunks[cached.rawChunks.length - 1]
+            const utc = new Date(lastChunk.start_utc)
+            const endUtc = new Date(utc.getTime() + lastChunk.duration_ms)
+
+            // Calculate day offset from recording start date
+            const dayOffset = getDayOffset(rec.date, endUtc)
+            const endTimeOfDay = timeOfDayFromDate(endUtc)
+            return endTimeOfDay + dayOffset * SECONDS_PER_DAY
+        }
+        // Fallback: use audioDuration
+        const duration = rec.audioDuration && isFinite(rec.audioDuration) ? rec.audioDuration : 0
+        return rec.timeOfDay + duration
+    }
 
     // Computed
     const availableDates = computed(() => {
@@ -31,14 +53,17 @@ export function useRecordings() {
         recordings.value.forEach(r => {
             // 添加原始日期
             dates.add(r.dateKey)
-            // 检查跨日延伸
-            const duration = r.audioDuration && isFinite(r.audioDuration) ? r.audioDuration : 0
-            if (duration > 0 && r.timeOfDay + duration > SECONDS_PER_DAY) {
-                // 计算延伸到的下一天日期
-                const nextDate = new Date(r.date)
-                nextDate.setDate(nextDate.getDate() + 1)
-                const nextDateKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`
-                dates.add(nextDateKey)
+
+            // 使用物理结束时间判断跨日（基于 JSONL 数据）
+            const physicalEndTime = getRecordingPhysicalEndTime(r)
+            if (physicalEndTime > SECONDS_PER_DAY) {
+                // 计算跨越了多少天
+                const daysSpanned = Math.floor(physicalEndTime / SECONDS_PER_DAY)
+                for (let i = 1; i <= daysSpanned; i++) {
+                    const nextDate = new Date(r.date)
+                    nextDate.setDate(nextDate.getDate() + i)
+                    dates.add(formatDateKey(nextDate))
+                }
             }
         })
         return [...dates].sort()
@@ -70,31 +95,34 @@ export function useRecordings() {
             .sort((a, b) => a.date - b.date)
     })
 
-    // Cross-day recordings (from previous day extending into current day)
+    // Cross-day recordings (from previous days extending into current day)
     const crossDayRecordings = computed(() => {
         if (!selectedDate.value) return []
 
-        // Calculate previous day's dateKey
         const currentDate = new Date(selectedDate.value + 'T00:00:00')
-        const prevDate = new Date(currentDate)
-        prevDate.setDate(prevDate.getDate() - 1)
-        const prevDateKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`
 
         return recordings.value
             .filter(r => {
-                if (r.dateKey !== prevDateKey) return false
+                // Recording must start before the selected date
+                const dayOffset = getDayOffset(r.date, currentDate)
+                if (dayOffset <= 0) return false
+
                 if (selectedFreq.value && r.frequency !== selectedFreq.value) return false
 
-                const duration = r.audioDuration && isFinite(r.audioDuration) ? r.audioDuration : 0
-                if (duration <= 0) return false
-                return r.timeOfDay + duration > SECONDS_PER_DAY
+                // Check if recording extends into the selected date using physical end time
+                const physicalEndTime = getRecordingPhysicalEndTime(r)
+                return physicalEndTime > dayOffset * SECONDS_PER_DAY
             })
             .map(r => {
-                const offsetTime = r.timeOfDay - SECONDS_PER_DAY
+                // Calculate the day offset for time adjustment
+                const dayOffset = getDayOffset(r.date, currentDate)
+                const offsetTime = r.timeOfDay - dayOffset * SECONDS_PER_DAY
+
                 return {
                     ...r,
                     timeOfDay: offsetTime,
-                    isCrossDay: true
+                    isCrossDay: true,
+                    crossDayOffset: dayOffset  // Store for segment calculation
                 }
             })
     })
@@ -242,7 +270,11 @@ export function useRecordings() {
         // If JSONL data available, use real time range from full data
         if (cached?.rawChunks?.length) {
             // Always calculate base segment from full (unfiltered) data
-            const fullAnalysis = chunksToActiveSegments(cached.rawChunks, { skipShort: false })
+            // Pass recording start date to handle cross-day time calculation
+            const fullAnalysis = chunksToActiveSegments(cached.rawChunks, {
+                skipShort: false,
+                recordingStartDate: rec.date
+            })
 
             if (fullAnalysis?.realTimeRange) {
                 let { start, end } = fullAnalysis.realTimeRange
@@ -250,19 +282,22 @@ export function useRecordings() {
 
                 // 跨日录音时间调整：将原始时间偏移到当前日期视图
                 if (rec.isCrossDay) {
-                    start -= SECONDS_PER_DAY
-                    end -= SECONDS_PER_DAY
+                    const offset = (rec.crossDayOffset || 1) * SECONDS_PER_DAY
+                    start -= offset
+                    end -= offset
                 }
 
-                // 裁剪 end 不超过当天边界
-                end = Math.min(end, SECONDS_PER_DAY)
+                // 裁剪 start 和 end 到当天边界
+                start = clampTimeToDay(start)
+                end = clampTimeToDay(end)
 
                 // Check if all segments would be filtered (for skip logic)
                 let allSkipped = false
                 if (skipShort) {
                     const filteredAnalysis = chunksToActiveSegments(cached.rawChunks, {
                         skipShort: true,
-                        shortThresholdMs: 2048
+                        shortThresholdMs: 2048,
+                        recordingStartDate: rec.date
                     })
                     allSkipped = filteredAnalysis.allSkipped
                 }
@@ -280,10 +315,7 @@ export function useRecordings() {
 
         // Fallback: use audio duration
         const actualDuration = rec.audioDuration && isFinite(rec.audioDuration) ? rec.audioDuration : 60
-        let end = rec.timeOfDay + actualDuration
-
-        // 裁剪 end 不超过当天边界
-        end = Math.min(end, SECONDS_PER_DAY)
+        const end = clampTimeToDay(rec.timeOfDay + actualDuration)
 
         return {
             start: rec.timeOfDay,
@@ -309,9 +341,11 @@ export function useRecordings() {
             return []
         }
 
+        // Pass recording start date to handle cross-day time calculation
         const analysis = chunksToActiveSegments(cached.rawChunks, {
             skipShort,
-            shortThresholdMs: 2048
+            shortThresholdMs: 2048,
+            recordingStartDate: rec.date
         })
 
         if (!analysis?.segments?.length) {
@@ -324,17 +358,19 @@ export function useRecordings() {
 
             // 跨日录音时间调整：将原始时间偏移到当前日期视图
             if (rec.isCrossDay) {
-                start -= SECONDS_PER_DAY
-                end -= SECONDS_PER_DAY
+                const offset = (rec.crossDayOffset || 1) * SECONDS_PER_DAY
+                start -= offset
+                end -= offset
             }
 
-            // 裁剪 end 不超过当天边界
-            end = Math.min(end, SECONDS_PER_DAY)
-
-            // 如果片段完全在当天之前（裁剪后 start >= end），跳过
-            if (start >= end) {
+            // 如果片段完全在当天之外，跳过
+            if (isTimeOutOfDay(start, end)) {
                 return null
             }
+
+            // 裁剪 start 和 end 到当天边界
+            start = clampTimeToDay(start)
+            end = clampTimeToDay(end)
 
             return {
                 start,
@@ -376,6 +412,14 @@ export function useRecordings() {
     // Load all timestamp data for current recordings
     async function loadAllTimestamps() {
         await Promise.all(recordings.value.map(loadTimestampData))
+        // After loading JSONL data, update default date to latest available
+        // (cross-day recordings may add new dates)
+        if (availableDates.value.length > 0) {
+            const latestDate = availableDates.value[availableDates.value.length - 1]
+            if (selectedDate.value !== latestDate) {
+                selectedDate.value = latestDate
+            }
+        }
     }
 
     return {
@@ -384,8 +428,6 @@ export function useRecordings() {
         selectedDate,
         selectedFreq,
         analysisCache,  // Preserved for future timestamp mapping feature
-        // Constants
-        SECONDS_PER_DAY,
         // Computed
         availableDates,
         availableFreqs,
